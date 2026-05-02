@@ -221,3 +221,8 @@ OmniRoute is an AI gateway for multi-provider LLMs: an OpenAI-compatible endpoin
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Friendly Links
+
+- [V2EX](https://www.v2ex.com/)
+- [Linux.do](https://linux.do/)

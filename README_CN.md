@@ -203,3 +203,8 @@ QQ 群：188637136（满）、1081218164
 或
 
 Telegram 群：https://t.me/CLIProxyAPI
+
+## 友情链接
+
+- [V2EX](https://www.v2ex.com/)
+- [Linux.do](https://linux.do/)

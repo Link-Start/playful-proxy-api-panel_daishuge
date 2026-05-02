@@ -191,3 +191,8 @@ OmniRouteはマルチプロバイダーLLM向けのAIゲートウェイです：
 ## ライセンス
 
 本プロジェクトはMITライセンスの下でライセンスされています - 詳細は[LICENSE](LICENSE)ファイルを参照してください。
+
+## フレンドリンク
+
+- [V2EX](https://www.v2ex.com/)
+- [Linux.do](https://linux.do/)
