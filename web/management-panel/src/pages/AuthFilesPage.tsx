@@ -20,10 +20,12 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { IconFilterAll } from '@/components/ui/icons';
+import { IconDownload, IconFilterAll, IconTrash2 } from '@/components/ui/icons';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
+import { authFilesApi } from '@/services/api/authFiles';
 import { copyToClipboard } from '@/utils/clipboard';
+import { downloadBlob } from '@/utils/download';
 import {
   MAX_CARD_PAGE_SIZE,
   MIN_CARD_PAGE_SIZE,
@@ -79,6 +81,7 @@ const buildWildcardSearch = (value: string): RegExp | null => {
 export function AuthFilesPage() {
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
+  const showConfirmation = useNotificationStore((state) => state.showConfirmation);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const resolvedTheme: ResolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const pageTransitionLayer = usePageTransitionLayer();
@@ -99,6 +102,8 @@ export function AuthFilesPage() {
   const [viewMode, setViewMode] = useState<'diagram' | 'list'>('list');
   const [sortMode, setSortMode] = useState<AuthFilesSortMode>('default');
   const [batchActionBarVisible, setBatchActionBarVisible] = useState(false);
+  const [exportingArchive, setExportingArchive] = useState(false);
+  const [cleaningDisabled, setCleaningDisabled] = useState(false);
   const [uiStateHydrated, setUiStateHydrated] = useState(false);
   const floatingBatchActionsRef = useRef<HTMLDivElement>(null);
   const batchActionAnimationRef = useRef<AnimationPlaybackControlsWithThen | null>(null);
@@ -462,6 +467,59 @@ export function AuthFilesPage() {
     [showNotification, t]
   );
 
+  const handleExportArchive = useCallback(async () => {
+    setExportingArchive(true);
+    try {
+      const response = await authFilesApi.exportArchive();
+      const blob =
+        response.data instanceof Blob
+          ? response.data
+          : new Blob([response.data], { type: 'application/zip' });
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      downloadBlob({
+        filename: `ppap-auth-files-${timestamp}.zip`,
+        blob,
+      });
+      showNotification(t('auth_files.export_library_success'), 'success');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('auth_files.export_library_failed');
+      showNotification(message, 'error');
+    } finally {
+      setExportingArchive(false);
+    }
+  }, [showNotification, t]);
+
+  const handleCleanupDisabled = useCallback(() => {
+    showConfirmation({
+      title: t('auth_files.cleanup_disabled_title'),
+      message: t('auth_files.cleanup_disabled_confirm'),
+      confirmText: t('auth_files.cleanup_disabled_button'),
+      cancelText: t('common.cancel'),
+      variant: 'danger',
+      onConfirm: async () => {
+        setCleaningDisabled(true);
+        try {
+          const result = await authFilesApi.cleanupDisabled();
+          if (result.deleted > 0) {
+            showNotification(
+              t('auth_files.cleanup_disabled_success', { count: result.deleted }),
+              'success'
+            );
+          } else {
+            showNotification(t('auth_files.cleanup_disabled_none'), 'info');
+          }
+          await loadFiles();
+        } catch (err: unknown) {
+          const message =
+            err instanceof Error ? err.message : t('auth_files.cleanup_disabled_failed');
+          showNotification(message, 'error');
+        } finally {
+          setCleaningDisabled(false);
+        }
+      },
+    });
+  }, [loadFiles, showConfirmation, showNotification, t]);
+
   const openExcludedEditor = useCallback(
     (provider?: string) => {
       const providerValue = (provider || (filter !== 'all' ? String(filter) : '')).trim();
@@ -668,6 +726,26 @@ export function AuthFilesPage() {
           <div className={styles.headerActions}>
             <Button variant="secondary" size="sm" onClick={handleHeaderRefresh} disabled={loading}>
               {t('common.refresh')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExportArchive}
+              disabled={disableControls || loading || exportingArchive}
+              loading={exportingArchive}
+            >
+              <IconDownload size={16} />
+              {t('auth_files.export_library_button')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleCleanupDisabled}
+              disabled={disableControls || loading || cleaningDisabled}
+              loading={cleaningDisabled}
+            >
+              <IconTrash2 size={16} />
+              {t('auth_files.cleanup_disabled_button')}
             </Button>
             <Button
               size="sm"

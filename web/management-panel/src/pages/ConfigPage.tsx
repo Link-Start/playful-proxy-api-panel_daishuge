@@ -6,6 +6,7 @@ import { parse as parseYaml, parseDocument } from 'yaml';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import {
   IconCheck,
   IconChevronDown,
@@ -22,6 +23,7 @@ import { configFileApi } from '@/services/api/configFile';
 import styles from './ConfigPage.module.scss';
 
 type ConfigEditorTab = 'visual' | 'source';
+type AutoSaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'blocked' | 'error';
 
 const LazyConfigSourceEditor = lazy(() => import('@/components/config/ConfigSourceEditor'));
 
@@ -70,6 +72,10 @@ export function ConfigPage() {
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [serverYaml, setServerYaml] = useState('');
   const [mergedYaml, setMergedYaml] = useState('');
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
+    return localStorage.getItem('config-management:auto-save') !== 'off';
+  });
+  const [autoSaveState, setAutoSaveState] = useState<AutoSaveState>('idle');
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -80,6 +86,9 @@ export function ConfigPage() {
   const [lastSearchedQuery, setLastSearchedQuery] = useState('');
   const editorRef = useRef<ReactCodeMirrorRef | null>(null);
   const floatingActionsRef = useRef<HTMLDivElement>(null);
+  const autoSaveTimerRef = useRef<number | null>(null);
+  const autoSaveSignatureRef = useRef('');
+  const latestAutoSaveSignatureRef = useRef('');
 
   const disableControls = connectionStatus !== 'connected';
   const isDirty = dirty || visualDirty;
@@ -88,6 +97,17 @@ export function ConfigPage() {
   const hasVisualValidationErrors =
     activeTab === 'visual' &&
     (Object.values(visualValidationErrors).some(Boolean) || visualHasPayloadValidationErrors);
+  const autoSaveSignature = `${activeTab}:${
+    activeTab === 'source' ? content : JSON.stringify(visualValues)
+  }`;
+
+  useEffect(() => {
+    latestAutoSaveSignatureRef.current = autoSaveSignature;
+  }, [autoSaveSignature]);
+
+  useEffect(() => {
+    localStorage.setItem('config-management:auto-save', autoSaveEnabled ? 'on' : 'off');
+  }, [autoSaveEnabled]);
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
@@ -100,6 +120,8 @@ export function ConfigPage() {
       setServerYaml(data);
       setMergedYaml(data);
       loadVisualValuesFromYaml(data);
+      setAutoSaveState('idle');
+      autoSaveSignatureRef.current = '';
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : t('notification.refresh_failed');
       setError(message);
@@ -123,6 +145,36 @@ export function ConfigPage() {
     );
   }, [activeTab, showNotification, t, visualParseError]);
 
+  const refreshGlobalConfig = useCallback(async () => {
+    try {
+      useConfigStore.getState().clearCache();
+      await useConfigStore.getState().fetchConfig(undefined, true);
+    } catch (refreshError: unknown) {
+      const message =
+        refreshError instanceof Error
+          ? refreshError.message
+          : typeof refreshError === 'string'
+            ? refreshError
+            : '';
+      showNotification(
+        `${t('notification.refresh_failed')}${message ? `: ${message}` : ''}`,
+        'error'
+      );
+    }
+  }, [showNotification, t]);
+
+  const applySavedConfig = useCallback(
+    (latestContent: string) => {
+      setDirty(false);
+      setDiffModalOpen(false);
+      setContent(latestContent);
+      setServerYaml(latestContent);
+      setMergedYaml(latestContent);
+      loadVisualValuesFromYaml(latestContent);
+    },
+    [loadVisualValuesFromYaml]
+  );
+
   const handleConfirmSave = async () => {
     setSaving(true);
     try {
@@ -132,31 +184,11 @@ export function ConfigPage() {
 
       await configFileApi.saveConfigYaml(mergedYaml);
       const latestContent = await configFileApi.fetchConfigYaml();
-      setDirty(false);
-      setDiffModalOpen(false);
-      setContent(latestContent);
-      setServerYaml(latestContent);
-      setMergedYaml(latestContent);
-      loadVisualValuesFromYaml(latestContent);
-
-      // Keep the global config store in sync so sidebar / other pages reflect YAML changes immediately.
-      try {
-        useConfigStore.getState().clearCache();
-        await useConfigStore.getState().fetchConfig(undefined, true);
-      } catch (refreshError: unknown) {
-        const message =
-          refreshError instanceof Error
-            ? refreshError.message
-            : typeof refreshError === 'string'
-              ? refreshError
-              : '';
-        showNotification(
-          `${t('notification.refresh_failed')}${message ? `: ${message}` : ''}`,
-          'error'
-        );
-      }
+      applySavedConfig(latestContent);
+      await refreshGlobalConfig();
 
       showNotification(t('config_management.save_success'), 'success');
+      setAutoSaveState('saved');
       if (commercialModeChanged) {
         showNotification(t('notification.commercial_mode_restart_required'), 'warning');
       }
@@ -167,6 +199,139 @@ export function ConfigPage() {
       setSaving(false);
     }
   };
+
+  const handleAutoSave = useCallback(
+    async (signature: string) => {
+      if (disableControls || loading || saving || diffModalOpen) return;
+      if (hasVisualModeError || hasVisualValidationErrors) {
+        setAutoSaveState('blocked');
+        return;
+      }
+
+      setSaving(true);
+      setAutoSaveState('saving');
+      try {
+        const latestServerYaml = await configFileApi.fetchConfigYaml();
+
+        if (activeTab === 'source') {
+          const sourceDocument = parseDocument(content);
+          if (sourceDocument.errors.length > 0) {
+            setAutoSaveState('blocked');
+            return;
+          }
+        } else {
+          const latestDocument = parseDocument(latestServerYaml);
+          if (latestDocument.errors.length > 0) {
+            setAutoSaveState('blocked');
+            showNotification(
+              t('config_management.visual_mode_latest_yaml_invalid', {
+                message:
+                  latestDocument.errors[0]?.message ??
+                  t('config_management.visual_mode_save_blocked'),
+              }),
+              'error'
+            );
+            return;
+          }
+        }
+
+        const nextMergedYaml =
+          activeTab === 'source' ? content : applyVisualChangesToYaml(latestServerYaml);
+        const previousCommercialMode = readCommercialModeFromYaml(latestServerYaml);
+        const nextCommercialMode = readCommercialModeFromYaml(nextMergedYaml);
+        const commercialModeChanged = previousCommercialMode !== nextCommercialMode;
+
+        if (nextMergedYaml !== latestServerYaml) {
+          await configFileApi.saveConfigYaml(nextMergedYaml);
+        }
+
+        const latestContent = await configFileApi.fetchConfigYaml();
+        if (latestAutoSaveSignatureRef.current !== signature) {
+          setAutoSaveState('pending');
+          return;
+        }
+
+        applySavedConfig(latestContent);
+        await refreshGlobalConfig();
+        autoSaveSignatureRef.current = signature;
+        setAutoSaveState('saved');
+
+        if (commercialModeChanged) {
+          showNotification(t('notification.commercial_mode_restart_required'), 'warning');
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : '';
+        setAutoSaveState('error');
+        showNotification(
+          `${t('config_management.autosave_failed')}${message ? `: ${message}` : ''}`,
+          'error'
+        );
+      } finally {
+        setSaving(false);
+      }
+    },
+    [
+      activeTab,
+      applySavedConfig,
+      applyVisualChangesToYaml,
+      content,
+      diffModalOpen,
+      disableControls,
+      hasVisualModeError,
+      hasVisualValidationErrors,
+      loading,
+      refreshGlobalConfig,
+      saving,
+      showNotification,
+      t,
+    ]
+  );
+
+  useEffect(() => {
+    if (autoSaveTimerRef.current) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+
+    if (!autoSaveEnabled) {
+      setAutoSaveState('idle');
+      return;
+    }
+    if (!isDirty) {
+      setAutoSaveState((state) => (state === 'saved' ? 'saved' : 'idle'));
+      return;
+    }
+    if (disableControls || loading || diffModalOpen) return;
+    if (hasVisualModeError || hasVisualValidationErrors) {
+      setAutoSaveState('blocked');
+      return;
+    }
+    if (saving) return;
+    if (autoSaveSignature === autoSaveSignatureRef.current) return;
+
+    setAutoSaveState('pending');
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      void handleAutoSave(autoSaveSignature);
+    }, 1600);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        window.clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [
+    autoSaveEnabled,
+    autoSaveSignature,
+    diffModalOpen,
+    disableControls,
+    handleAutoSave,
+    hasVisualModeError,
+    hasVisualValidationErrors,
+    isDirty,
+    loading,
+    saving,
+  ]);
 
   const handleSave = async () => {
     if (activeTab === 'visual' && visualParseError) {
@@ -413,12 +578,21 @@ export function ConfigPage() {
     if (hasVisualValidationErrors)
       return t('config_management.visual.validation.validation_blocked');
     if (saving) return t('config_management.status_saving');
+    if (autoSaveEnabled && isDirty && autoSaveState === 'pending')
+      return t('config_management.autosave_pending');
+    if (autoSaveEnabled && isDirty && autoSaveState === 'blocked')
+      return t('config_management.autosave_blocked');
+    if (autoSaveEnabled && isDirty && autoSaveState === 'error')
+      return t('config_management.autosave_failed');
     if (isDirty) return t('config_management.status_dirty');
+    if (autoSaveEnabled && autoSaveState === 'saved') return t('config_management.autosave_saved');
     return t('config_management.status_loaded');
   };
 
   const getStatusClass = () => {
     if (error || hasVisualModeError || hasVisualValidationErrors) return styles.error;
+    if (autoSaveEnabled && (autoSaveState === 'blocked' || autoSaveState === 'error'))
+      return styles.error;
     if (isDirty) return styles.modified;
     if (!loading && !saving) return styles.saved;
     return '';
@@ -435,7 +609,15 @@ export function ConfigPage() {
     if (hasVisualValidationErrors)
       return t('config_management.visual.validation_blocked_short', { defaultValue: 'Fix errors' });
     if (saving) return t('config_management.status_saving_short', { defaultValue: 'Saving' });
+    if (autoSaveEnabled && isDirty && autoSaveState === 'pending')
+      return t('config_management.autosave_pending_short', { defaultValue: 'Auto save' });
+    if (autoSaveEnabled && isDirty && autoSaveState === 'blocked')
+      return t('config_management.autosave_blocked_short', { defaultValue: 'Blocked' });
+    if (autoSaveEnabled && isDirty && autoSaveState === 'error')
+      return t('config_management.autosave_failed_short', { defaultValue: 'Failed' });
     if (isDirty) return t('config_management.status_dirty_short', { defaultValue: 'Unsaved' });
+    if (autoSaveEnabled && autoSaveState === 'saved')
+      return t('config_management.autosave_saved_short', { defaultValue: 'Saved' });
     return t('config_management.status_loaded_short', { defaultValue: 'Loaded' });
   };
 
@@ -519,6 +701,15 @@ export function ConfigPage() {
         </div>
 
         <div className={styles.pageMeta}>
+          <div className={styles.autoSaveControl}>
+            <ToggleSwitch
+              checked={autoSaveEnabled}
+              onChange={setAutoSaveEnabled}
+              disabled={disableControls || loading}
+              ariaLabel={t('config_management.autosave_label')}
+              label={<span className={styles.autoSaveLabel}>{t('config_management.autosave_label')}</span>}
+            />
+          </div>
           <div className={`${styles.statusBadge} ${getStatusClass()}`}>{getStatusText()}</div>
           <div className={styles.tabBar}>
             <button

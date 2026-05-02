@@ -42,6 +42,7 @@ type AuthFileBatchDeleteResult = {
   files: string[];
   failed: AuthFileBatchFailure[];
 };
+type AuthFileCleanupDisabledResponse = AuthFileBatchDeleteResponse;
 
 export const AUTH_FILE_INVALID_JSON_OBJECT_ERROR = 'AUTH_FILE_INVALID_JSON_OBJECT';
 
@@ -442,6 +443,17 @@ export const authFilesApi = {
   deleteFile: (name: string) => authFilesApi.deleteFiles([name]),
 
   deleteAll: () => apiClient.delete('/auth-files', { params: { all: true } }),
+
+  cleanupDisabled: async (): Promise<AuthFileBatchDeleteResult> => {
+    const payload = await apiClient.delete<AuthFileCleanupDisabledResponse>('/auth-files/disabled');
+    return normalizeBatchDeleteResponse(payload, normalizeBatchFileNames(payload?.files));
+  },
+
+  exportArchive: () =>
+    apiClient.getRaw('/auth-files/export', {
+      responseType: 'blob',
+      timeout: 60_000
+    }),
 
   downloadText: async (name: string): Promise<string> => {
     const response = await apiClient.getRaw(`/auth-files/download?name=${encodeURIComponent(name)}`, {

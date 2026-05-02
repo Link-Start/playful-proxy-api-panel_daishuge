@@ -41,6 +41,13 @@
     min-width: 0;
   }
 
+  :global(.btn > span) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
   @include mobile {
     width: 100%;
   }
