@@ -60,8 +60,8 @@ logging-to-file: false
 logs-max-total-size-mb: 0
 
 # Maximum number of error log files retained when request logging is disabled.
-# When exceeded, the oldest error log files are deleted. Default is 10. Set to 0 to disable cleanup.
-error-logs-max-files: 10
+# Set to 0 to keep error logs permanently.
+error-logs-max-files: 0
 
 # When false, disable usage statistics aggregation and persistence.
 usage-statistics-enabled: false

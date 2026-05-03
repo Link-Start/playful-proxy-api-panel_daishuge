@@ -59,7 +59,7 @@ type Config struct {
 	LogsMaxTotalSizeMB int `yaml:"logs-max-total-size-mb" json:"logs-max-total-size-mb"`
 
 	// ErrorLogsMaxFiles limits the number of error log files retained when request logging is disabled.
-	// When exceeded, the oldest error log files are deleted. Default is 10. Set to 0 to disable cleanup.
+	// When exceeded, the oldest error log files are deleted. Default is 0, which disables cleanup.
 	ErrorLogsMaxFiles int `yaml:"error-logs-max-files" json:"error-logs-max-files"`
 
 	// UsageStatisticsEnabled toggles usage aggregation; when false, usage data is discarded.
@@ -618,7 +618,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	cfg.Host = "" // Default empty: binds to all interfaces (IPv4 + IPv6)
 	cfg.LoggingToFile = false
 	cfg.LogsMaxTotalSizeMB = 0
-	cfg.ErrorLogsMaxFiles = 10
+	cfg.ErrorLogsMaxFiles = 0
 	cfg.UsageStatisticsEnabled = false
 	cfg.RedisUsageQueueRetentionSeconds = 60
 	cfg.DisableCooling = false
@@ -680,7 +680,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	}
 
 	if cfg.ErrorLogsMaxFiles < 0 {
-		cfg.ErrorLogsMaxFiles = 10
+		cfg.ErrorLogsMaxFiles = 0
 	}
 
 	if cfg.RedisUsageQueueRetentionSeconds <= 0 {

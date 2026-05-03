@@ -115,6 +115,126 @@
   }
 }
 
+.storagePanel {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+  margin-bottom: $spacing-md;
+  padding: $spacing-md;
+  border: 1px solid var(--border-color);
+  border-radius: $radius-md;
+  background: var(--bg-secondary);
+}
+
+.storageHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-md;
+
+  @include mobile {
+    flex-direction: column;
+    gap: $spacing-xs;
+  }
+}
+
+.storageHeading {
+  min-width: 0;
+}
+
+.storageTitle {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.storagePath {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(640px, 68vw);
+
+  @include mobile {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+.storageTotal {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.storageGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: $spacing-sm;
+
+  @include tablet {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @include mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+.storageItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: $radius-sm;
+  background: var(--bg-primary);
+}
+
+.storageItemMeta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.storageItemLabel {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.storageItemValue {
+  margin-top: 3px;
+  font-size: 17px;
+  line-height: 1.15;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.storageItemFiles {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.storageClearButton {
+  flex: 0 0 auto;
+}
+
+.storageFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+}
+
 .searchWrapper {
   flex: 1;
   min-width: 220px;
@@ -522,8 +642,9 @@
 }
 
 .requestIdBadge {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
-    'Courier New', monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
   font-size: 11px;
   color: #0891b2;
   background: rgba(8, 145, 178, 0.1);
