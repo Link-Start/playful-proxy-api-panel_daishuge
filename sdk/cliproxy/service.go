@@ -1483,8 +1483,21 @@ func applyOAuthModelAlias(cfg *config.Config, provider, authKind string, models 
 	}
 
 	type aliasEntry struct {
-		alias string
-		fork  bool
+		alias              string
+		fork               bool
+		fixedThinkingBase  bool
+		fixedThinkingLevel string
+	}
+
+	originalIDs := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		if model == nil {
+			continue
+		}
+		id := strings.ToLower(strings.TrimSpace(model.ID))
+		if id != "" {
+			originalIDs[id] = struct{}{}
+		}
 	}
 
 	forward := make(map[string][]aliasEntry, len(aliases))
@@ -1499,6 +1512,18 @@ func applyOAuthModelAlias(cfg *config.Config, provider, authKind string, models 
 		}
 		key := strings.ToLower(name)
 		forward[key] = append(forward[key], aliasEntry{alias: alias, fork: aliases[i].Fork})
+		nameResult := thinking.ParseSuffixAllowHyphen(name)
+		baseName := strings.TrimSpace(nameResult.ModelName)
+		_, exactTargetExists := originalIDs[key]
+		if nameResult.HasSuffix && !exactTargetExists && baseName != "" && !strings.EqualFold(baseName, name) {
+			baseKey := strings.ToLower(baseName)
+			forward[baseKey] = append(forward[baseKey], aliasEntry{
+				alias:              alias,
+				fork:               aliases[i].Fork,
+				fixedThinkingBase:  true,
+				fixedThinkingLevel: nameResult.RawSuffix,
+			})
+		}
 	}
 	if len(forward) == 0 {
 		return models
@@ -1541,6 +1566,9 @@ func applyOAuthModelAlias(cfg *config.Config, provider, authKind string, models 
 
 		addedAlias := false
 		for _, entry := range entries {
+			if entry.fixedThinkingBase && !thinkingLevelSupported(model.Thinking, entry.fixedThinkingLevel) {
+				continue
+			}
 			mappedID := strings.TrimSpace(entry.alias)
 			if mappedID == "" {
 				continue
@@ -1557,6 +1585,9 @@ func applyOAuthModelAlias(cfg *config.Config, provider, authKind string, models 
 			clone.ID = mappedID
 			if clone.Name != "" {
 				clone.Name = rewriteModelInfoName(clone.Name, id, mappedID)
+			}
+			if entry.fixedThinkingBase && model.Thinking != nil {
+				clone.Thinking = nil
 			}
 			out = append(out, &clone)
 			addedAlias = true

@@ -109,6 +109,70 @@ func TestApplyOAuthModelAlias_ForkAddsAlias(t *testing.T) {
 	}
 }
 
+func TestApplyOAuthModelAlias_ForkAddsFixedThinkingAlias(t *testing.T) {
+	cfg := &config.Config{
+		OAuthModelAlias: map[string][]config.OAuthModelAlias{
+			"codex": {
+				{Name: "gpt-5.3-codex-spark-high", Alias: "spark-fast", Fork: true},
+			},
+		},
+	}
+	models := []*ModelInfo{
+		{
+			ID:       "gpt-5.3-codex-spark",
+			Name:     "models/gpt-5.3-codex-spark",
+			Thinking: &registry.ThinkingSupport{Levels: []string{"low", "medium", "high", "xhigh"}},
+		},
+	}
+
+	aliased := applyOAuthModelAlias(cfg, "codex", "oauth", models)
+	ids := make(map[string]*ModelInfo, len(aliased))
+	for _, model := range aliased {
+		ids[model.ID] = model
+	}
+	if ids["spark-fast"] == nil {
+		t.Fatalf("missing fixed thinking alias in %#v", ids)
+	}
+	if ids["spark-fast"].Thinking != nil {
+		t.Fatalf("fixed thinking alias should not generate additional thinking aliases")
+	}
+
+	out := applyAutomaticThinkingAliases(aliased, nil)
+	ids = make(map[string]*ModelInfo, len(out))
+	for _, model := range out {
+		ids[model.ID] = model
+	}
+	if ids["spark-fast"] == nil {
+		t.Fatalf("missing fixed thinking alias after automatic aliases in %#v", ids)
+	}
+	if ids["spark-fast-low"] != nil {
+		t.Fatalf("fixed thinking alias generated a misleading level alias")
+	}
+	if ids["gpt-5.3-codex-spark-high"] == nil {
+		t.Fatalf("missing automatic base thinking alias in %#v", ids)
+	}
+}
+
+func TestApplyOAuthModelAlias_FixedThinkingAliasRequiresSupportedBase(t *testing.T) {
+	cfg := &config.Config{
+		OAuthModelAlias: map[string][]config.OAuthModelAlias{
+			"codex": {
+				{Name: "plain-model-high", Alias: "plain-fast", Fork: true},
+			},
+		},
+	}
+	models := []*ModelInfo{
+		{ID: "plain-model", Name: "models/plain-model"},
+	}
+
+	out := applyOAuthModelAlias(cfg, "codex", "oauth", models)
+	for _, model := range out {
+		if model.ID == "plain-fast" {
+			t.Fatalf("non-thinking base model should not get fixed thinking alias")
+		}
+	}
+}
+
 func TestApplyOAuthModelAlias_ForkAddsMultipleAliases(t *testing.T) {
 	cfg := &config.Config{
 		OAuthModelAlias: map[string][]config.OAuthModelAlias{
