@@ -58,8 +58,8 @@ func (m *DefaultModelMapper) MapModel(requestedModel string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Extract thinking suffix from requested model using ParseSuffix
-	requestResult := thinking.ParseSuffix(requestedModel)
+	// Extract thinking suffix from requested model.
+	requestResult := thinking.ParseSuffixAllowHyphen(requestedModel)
 	baseModel := requestResult.ModelName
 
 	// Normalize the base model for lookup (case-insensitive)
@@ -83,7 +83,7 @@ func (m *DefaultModelMapper) MapModel(requestedModel string) string {
 	}
 
 	// Check if target model already has a thinking suffix (config priority)
-	targetResult := thinking.ParseSuffix(targetModel)
+	targetResult := thinking.ParseSuffixForModel(targetModel)
 
 	// Verify target model has available providers (use base model for lookup)
 	providers := util.GetProviderName(targetResult.ModelName)
@@ -101,7 +101,7 @@ func (m *DefaultModelMapper) MapModel(requestedModel string) string {
 	// Preserve user's thinking suffix on the mapped model
 	// (skip empty suffixes to avoid returning "model()")
 	if requestResult.HasSuffix && requestResult.RawSuffix != "" {
-		return targetModel + "(" + requestResult.RawSuffix + ")"
+		return thinking.FormatSuffix(targetModel, requestResult)
 	}
 
 	// Note: Detailed routing log is handled by logAmpRouting in fallback_handlers.go

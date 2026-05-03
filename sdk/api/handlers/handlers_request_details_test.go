@@ -21,7 +21,7 @@ func TestGetRequestDetails_PreservesSuffix(t *testing.T) {
 		{ID: "gemini-2.5-flash", Created: now + 25},
 	})
 	modelRegistry.RegisterClient("test-request-details-openai", "openai", []*registry.ModelInfo{
-		{ID: "gpt-5.2", Created: now + 20},
+		{ID: "gpt-5.2", Created: now + 20, Thinking: &registry.ThinkingSupport{Levels: []string{"low", "medium", "high", "xhigh"}}},
 	})
 	modelRegistry.RegisterClient("test-request-details-claude", "claude", []*registry.ModelInfo{
 		{ID: "claude-sonnet-4-5", Created: now + 5},
@@ -61,6 +61,13 @@ func TestGetRequestDetails_PreservesSuffix(t *testing.T) {
 			inputModel:    "gpt-5.2(high)",
 			wantProviders: []string{"openai"},
 			wantModel:     "gpt-5.2(high)",
+			wantErr:       false,
+		},
+		{
+			name:          "hyphen level suffix preserved",
+			inputModel:    "gpt-5.2-high",
+			wantProviders: []string{"openai"},
+			wantModel:     "gpt-5.2-high",
 			wantErr:       false,
 		},
 		{

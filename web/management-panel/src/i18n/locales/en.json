@@ -1268,7 +1268,7 @@
     "total_tokens": "Total Tokens",
     "cached_tokens": "Cached Tokens",
     "estimated_cost": "Estimated Cost",
-    "pricing_source": "Estimated from OpenAI standard pricing on {{date}}, unit {{unit}}",
+    "pricing_source": "Estimated from OpenAI standard pricing on {{date}}, unit {{unit}}; Spark uses the GPT-5.3-Codex estimate while preview rates are finalizing",
     "priced_requests": "{{count}} priced requests",
     "average_value": "Average value",
     "total_throughput": "Overall throughput",

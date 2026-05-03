@@ -17,6 +17,7 @@ import (
 	_ "github.com/router-for-me/CLIProxyAPI/v6/internal/redisqueue"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/runtime/executor"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/thinking"
 	internalusage "github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/watcher"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/wsrelay"
@@ -1026,7 +1027,8 @@ func (s *Service) registerModelsForAuth(a *coreauth.Auth) {
 						if providerKey == "" {
 							providerKey = "openai-compatibility"
 						}
-						s.registerResolvedModelsForAuth(a, providerKey, applyModelPrefixes(ms, a.Prefix, s.cfg.ForceModelPrefix))
+						modelsWithPrefixes := applyModelPrefixes(ms, a.Prefix, s.cfg.ForceModelPrefix)
+						s.registerResolvedModelsForAuth(a, providerKey, applyAutomaticThinkingAliases(modelsWithPrefixes, nil))
 					} else {
 						// Ensure stale registrations are cleared when model list becomes empty.
 						GlobalModelRegistry().UnregisterClient(a.ID)
@@ -1047,7 +1049,8 @@ func (s *Service) registerModelsForAuth(a *coreauth.Auth) {
 		if key == "" {
 			key = strings.ToLower(strings.TrimSpace(a.Provider))
 		}
-		s.registerResolvedModelsForAuth(a, key, applyModelPrefixes(models, a.Prefix, s.cfg != nil && s.cfg.ForceModelPrefix))
+		modelsWithPrefixes := applyModelPrefixes(models, a.Prefix, s.cfg != nil && s.cfg.ForceModelPrefix)
+		s.registerResolvedModelsForAuth(a, key, applyAutomaticThinkingAliases(modelsWithPrefixes, excluded))
 		return
 	}
 
@@ -1568,4 +1571,100 @@ func applyOAuthModelAlias(cfg *config.Config, provider, authKind string, models 
 		}
 	}
 	return out
+}
+
+func applyAutomaticThinkingAliases(models []*ModelInfo, excluded []string) []*ModelInfo {
+	if len(models) == 0 {
+		return models
+	}
+
+	out := make([]*ModelInfo, 0, len(models)*2)
+	seen := make(map[string]struct{}, len(models)*2)
+	originalIDs := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		if model == nil {
+			continue
+		}
+		id := strings.ToLower(strings.TrimSpace(model.ID))
+		if id != "" {
+			originalIDs[id] = struct{}{}
+		}
+	}
+	addModel := func(model *ModelInfo) bool {
+		if model == nil {
+			return false
+		}
+		id := strings.TrimSpace(model.ID)
+		if id == "" {
+			return false
+		}
+		key := strings.ToLower(id)
+		if _, exists := seen[key]; exists {
+			return false
+		}
+		seen[key] = struct{}{}
+		out = append(out, model)
+		return true
+	}
+
+	for _, model := range models {
+		if !addModel(model) || model == nil || model.Thinking == nil || len(model.Thinking.Levels) == 0 {
+			continue
+		}
+		baseID := strings.TrimSpace(model.ID)
+		for _, level := range []thinking.ThinkingLevel{thinking.LevelLow, thinking.LevelMedium, thinking.LevelHigh, thinking.LevelXHigh} {
+			if !thinkingLevelSupported(model.Thinking, string(level)) {
+				continue
+			}
+			aliasID := baseID + "-" + string(level)
+			if modelExcluded(aliasID, excluded) {
+				continue
+			}
+			aliasKey := strings.ToLower(aliasID)
+			if _, exists := originalIDs[aliasKey]; exists {
+				continue
+			}
+			if _, exists := seen[aliasKey]; exists {
+				continue
+			}
+			clone := *model
+			clone.ID = aliasID
+			clone.DisplayName = strings.TrimSpace(model.DisplayName)
+			if clone.DisplayName == "" {
+				clone.DisplayName = baseID
+			}
+			clone.DisplayName += " " + strings.ToUpper(string(level))
+			if clone.Name != "" {
+				clone.Name = rewriteModelInfoName(clone.Name, baseID, aliasID)
+			}
+			clone.ThinkingAliasBase = baseID
+			addModel(&clone)
+		}
+	}
+	return out
+}
+
+func thinkingLevelSupported(support *registry.ThinkingSupport, level string) bool {
+	if support == nil {
+		return false
+	}
+	for _, candidate := range support.Levels {
+		if strings.EqualFold(strings.TrimSpace(candidate), level) {
+			return true
+		}
+	}
+	return false
+}
+
+func modelExcluded(modelID string, excluded []string) bool {
+	modelID = strings.ToLower(strings.TrimSpace(modelID))
+	if modelID == "" || len(excluded) == 0 {
+		return false
+	}
+	for _, pattern := range excluded {
+		if matchWildcard(strings.ToLower(strings.TrimSpace(pattern)), modelID) {
+			return true
+		}
+	}
+	return false
 }

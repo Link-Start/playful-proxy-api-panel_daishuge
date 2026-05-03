@@ -3,6 +3,7 @@ package cliproxy
 import (
 	"testing"
 
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
 )
 
@@ -27,6 +28,57 @@ func TestApplyOAuthModelAlias_Rename(t *testing.T) {
 	}
 	if out[0].Name != "models/g5" {
 		t.Fatalf("expected model name %q, got %q", "models/g5", out[0].Name)
+	}
+}
+
+func TestApplyAutomaticThinkingAliases(t *testing.T) {
+	models := []*ModelInfo{
+		{
+			ID:       "gpt-5.3-codex-spark",
+			Name:     "models/gpt-5.3-codex-spark",
+			Thinking: &registry.ThinkingSupport{Levels: []string{"low", "medium", "high", "xhigh"}},
+		},
+	}
+
+	out := applyAutomaticThinkingAliases(models, nil)
+	ids := make(map[string]*ModelInfo, len(out))
+	for _, model := range out {
+		ids[model.ID] = model
+	}
+	for _, id := range []string{
+		"gpt-5.3-codex-spark",
+		"gpt-5.3-codex-spark-low",
+		"gpt-5.3-codex-spark-medium",
+		"gpt-5.3-codex-spark-high",
+		"gpt-5.3-codex-spark-xhigh",
+	} {
+		if ids[id] == nil {
+			t.Fatalf("missing model alias %q in %#v", id, ids)
+		}
+	}
+	if got := ids["gpt-5.3-codex-spark-high"].ThinkingAliasBase; got != "gpt-5.3-codex-spark" {
+		t.Fatalf("ThinkingAliasBase = %q", got)
+	}
+}
+
+func TestApplyAutomaticThinkingAliases_ExplicitAliasWins(t *testing.T) {
+	models := []*ModelInfo{
+		{ID: "base", Thinking: &registry.ThinkingSupport{Levels: []string{"high"}}},
+		{ID: "base-high"},
+	}
+
+	out := applyAutomaticThinkingAliases(models, nil)
+	count := 0
+	for _, model := range out {
+		if model.ID == "base-high" {
+			count++
+			if model.ThinkingAliasBase != "" {
+				t.Fatalf("explicit alias should keep priority, got generated marker %q", model.ThinkingAliasBase)
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("base-high count = %d, want 1", count)
 	}
 }
 

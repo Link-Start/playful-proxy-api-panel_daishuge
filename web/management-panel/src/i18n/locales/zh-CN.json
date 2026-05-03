@@ -1268,7 +1268,7 @@
     "total_tokens": "总 Tokens",
     "cached_tokens": "缓存 Tokens",
     "estimated_cost": "预估费用",
-    "pricing_source": "按 OpenAI {{date}} 标准价格估算，单位 {{unit}}",
+    "pricing_source": "按 OpenAI {{date}} 标准价格估算，单位 {{unit}}；Spark 预览期临时沿用 GPT-5.3-Codex 估算价",
     "priced_requests": "已匹配价格的请求 {{count}} 条",
     "average_value": "平均值",
     "total_throughput": "整体吞吐",

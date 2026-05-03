@@ -80,19 +80,24 @@ func (m *Manager) applyOAuthModelAlias(auth *Auth, requestedModel string) string
 	return upstreamModel
 }
 
-func modelAliasLookupCandidates(requestedModel string) (thinking.SuffixResult, []string) {
+type modelAliasLookupCandidate struct {
+	value          string
+	preserveSuffix bool
+}
+
+func modelAliasLookupCandidates(requestedModel string) (thinking.SuffixResult, []modelAliasLookupCandidate) {
 	requestedModel = strings.TrimSpace(requestedModel)
 	if requestedModel == "" {
 		return thinking.SuffixResult{}, nil
 	}
-	requestResult := thinking.ParseSuffix(requestedModel)
+	requestResult := thinking.ParseSuffixAllowHyphen(requestedModel)
 	base := requestResult.ModelName
 	if base == "" {
 		base = requestedModel
 	}
-	candidates := []string{base}
+	candidates := []modelAliasLookupCandidate{{value: requestedModel, preserveSuffix: false}}
 	if base != requestedModel {
-		candidates = append(candidates, requestedModel)
+		candidates = append(candidates, modelAliasLookupCandidate{value: base, preserveSuffix: true})
 	}
 	return requestResult, candidates
 }
@@ -102,11 +107,11 @@ func preserveResolvedModelSuffix(resolved string, requestResult thinking.SuffixR
 	if resolved == "" {
 		return ""
 	}
-	if thinking.ParseSuffix(resolved).HasSuffix {
+	if thinking.ParseSuffixAllowHyphen(resolved).HasSuffix {
 		return resolved
 	}
 	if requestResult.HasSuffix && requestResult.RawSuffix != "" {
-		return resolved + "(" + requestResult.RawSuffix + ")"
+		return thinking.FormatSuffix(resolved, requestResult)
 	}
 	return resolved
 }
@@ -131,14 +136,16 @@ func resolveModelAliasPoolFromConfigModels(requestedModel string, models []model
 		name := strings.TrimSpace(models[i].GetName())
 		alias := strings.TrimSpace(models[i].GetAlias())
 		for _, candidate := range candidates {
-			if candidate == "" || alias == "" || !strings.EqualFold(alias, candidate) {
+			if candidate.value == "" || alias == "" || !strings.EqualFold(alias, candidate.value) {
 				continue
 			}
-			resolved := candidate
+			resolved := candidate.value
 			if name != "" {
 				resolved = name
 			}
-			resolved = preserveResolvedModelSuffix(resolved, requestResult)
+			if candidate.preserveSuffix {
+				resolved = preserveResolvedModelSuffix(resolved, requestResult)
+			}
 			key := strings.ToLower(strings.TrimSpace(resolved))
 			if key == "" {
 				break
@@ -158,10 +165,13 @@ func resolveModelAliasPoolFromConfigModels(requestedModel string, models []model
 	for i := range models {
 		name := strings.TrimSpace(models[i].GetName())
 		for _, candidate := range candidates {
-			if candidate == "" || name == "" || !strings.EqualFold(name, candidate) {
+			if candidate.value == "" || name == "" || !strings.EqualFold(name, candidate.value) {
 				continue
 			}
-			return []string{preserveResolvedModelSuffix(name, requestResult)}
+			if candidate.preserveSuffix {
+				return []string{preserveResolvedModelSuffix(name, requestResult)}
+			}
+			return []string{name}
 		}
 	}
 	return nil
@@ -194,14 +204,12 @@ func resolveUpstreamModelFromAliasTable(m *Manager, auth *Auth, requestedModel, 
 		return ""
 	}
 
-	// Extract thinking suffix from requested model using ParseSuffix
-	requestResult := thinking.ParseSuffix(requestedModel)
+	// Extract thinking suffix from requested model. Exact aliases are tried first,
+	// then the suffix-stripped base model is tried with suffix preservation.
+	requestResult, candidates := modelAliasLookupCandidates(requestedModel)
 	baseModel := requestResult.ModelName
-
-	// Candidate keys to match: base model and raw input (handles suffix-parsing edge cases).
-	candidates := []string{baseModel}
-	if baseModel != requestedModel {
-		candidates = append(candidates, requestedModel)
+	if baseModel == "" {
+		baseModel = strings.TrimSpace(requestedModel)
 	}
 
 	raw := m.oauthModelAlias.Load()
@@ -215,7 +223,7 @@ func resolveUpstreamModelFromAliasTable(m *Manager, auth *Auth, requestedModel, 
 	}
 
 	for _, candidate := range candidates {
-		key := strings.ToLower(strings.TrimSpace(candidate))
+		key := strings.ToLower(strings.TrimSpace(candidate.value))
 		if key == "" {
 			continue
 		}
@@ -228,12 +236,12 @@ func resolveUpstreamModelFromAliasTable(m *Manager, auth *Auth, requestedModel, 
 		}
 
 		// If config already has suffix, it takes priority.
-		if thinking.ParseSuffix(original).HasSuffix {
+		if thinking.ParseSuffixAllowHyphen(original).HasSuffix {
 			return original
 		}
 		// Preserve user's thinking suffix on the resolved model.
-		if requestResult.HasSuffix && requestResult.RawSuffix != "" {
-			return original + "(" + requestResult.RawSuffix + ")"
+		if candidate.preserveSuffix && requestResult.HasSuffix && requestResult.RawSuffix != "" {
+			return thinking.FormatSuffix(original, requestResult)
 		}
 		return original
 	}

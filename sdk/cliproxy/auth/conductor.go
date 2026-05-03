@@ -396,15 +396,22 @@ func (m *Manager) lookupAPIKeyUpstreamModel(authID, requestedModel string) strin
 	if len(byAlias) == 0 {
 		return ""
 	}
-	key := strings.ToLower(thinking.ParseSuffix(requestedModel).ModelName)
-	if key == "" {
-		key = strings.ToLower(requestedModel)
+	_, candidates := modelAliasLookupCandidates(requestedModel)
+	for _, candidate := range candidates {
+		key := strings.ToLower(strings.TrimSpace(candidate.value))
+		if key == "" {
+			continue
+		}
+		resolved := strings.TrimSpace(byAlias[key])
+		if resolved == "" {
+			continue
+		}
+		if candidate.preserveSuffix {
+			return preserveRequestedModelSuffix(requestedModel, resolved)
+		}
+		return resolved
 	}
-	resolved := strings.TrimSpace(byAlias[key])
-	if resolved == "" {
-		return ""
-	}
-	return preserveRequestedModelSuffix(requestedModel, resolved)
+	return ""
 }
 
 func isAPIKeyAuth(auth *Auth) bool {
@@ -444,7 +451,7 @@ func openAICompatProviderKey(auth *Auth) string {
 }
 
 func openAICompatModelPoolKey(auth *Auth, requestedModel string) string {
-	base := strings.TrimSpace(thinking.ParseSuffix(requestedModel).ModelName)
+	base := strings.TrimSpace(thinking.ParseSuffixAllowHyphen(requestedModel).ModelName)
 	if base == "" {
 		base = strings.TrimSpace(requestedModel)
 	}
@@ -517,7 +524,7 @@ func (m *Manager) resolveOpenAICompatUpstreamModelPool(auth *Auth, requestedMode
 }
 
 func preserveRequestedModelSuffix(requestedModel, resolved string) string {
-	return preserveResolvedModelSuffix(resolved, thinking.ParseSuffix(requestedModel))
+	return preserveResolvedModelSuffix(resolved, thinking.ParseSuffixAllowHyphen(requestedModel))
 }
 
 func (m *Manager) executionModelCandidates(auth *Auth, routeModel string) []string {
@@ -1005,7 +1012,7 @@ func compileAPIKeyModelAliasForModels[T interface {
 		if alias == "" || name == "" {
 			continue
 		}
-		aliasKey := strings.ToLower(thinking.ParseSuffix(alias).ModelName)
+		aliasKey := strings.ToLower(strings.TrimSpace(alias))
 		if aliasKey == "" {
 			aliasKey = strings.ToLower(alias)
 		}
@@ -1016,7 +1023,7 @@ func compileAPIKeyModelAliasForModels[T interface {
 		out[aliasKey] = name
 		// Also allow direct lookup by upstream name (case-insensitive), so lookups on already-upstream
 		// models remain a cheap no-op.
-		nameKey := strings.ToLower(thinking.ParseSuffix(name).ModelName)
+		nameKey := strings.ToLower(strings.TrimSpace(name))
 		if nameKey == "" {
 			nameKey = strings.ToLower(name)
 		}
@@ -1026,7 +1033,7 @@ func compileAPIKeyModelAliasForModels[T interface {
 			}
 		}
 		// Preserve config suffix priority by seeding a base-name lookup when name already has suffix.
-		nameResult := thinking.ParseSuffix(name)
+		nameResult := thinking.ParseSuffixAllowHyphen(name)
 		if nameResult.HasSuffix {
 			baseKey := strings.ToLower(strings.TrimSpace(nameResult.ModelName))
 			if baseKey != "" {
@@ -2689,7 +2696,7 @@ func (m *Manager) pickNextLegacy(ctx context.Context, provider, model string, op
 	modelKey := strings.TrimSpace(model)
 	// Always use base model name (without thinking suffix) for auth matching.
 	if modelKey != "" {
-		parsed := thinking.ParseSuffix(modelKey)
+		parsed := thinking.ParseSuffixForModel(modelKey, provider)
 		if parsed.ModelName != "" {
 			modelKey = strings.TrimSpace(parsed.ModelName)
 		}
@@ -2822,7 +2829,7 @@ func (m *Manager) pickNextMixedLegacy(ctx context.Context, providers []string, m
 	modelKey := strings.TrimSpace(model)
 	// Always use base model name (without thinking suffix) for auth matching.
 	if modelKey != "" {
-		parsed := thinking.ParseSuffix(modelKey)
+		parsed := thinking.ParseSuffixForModel(modelKey)
 		if parsed.ModelName != "" {
 			modelKey = strings.TrimSpace(parsed.ModelName)
 		}

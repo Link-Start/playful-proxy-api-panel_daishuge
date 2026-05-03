@@ -2,8 +2,8 @@
   "currency": "USD",
   "unit": "1M tokens",
   "source": "https://openai.com/api/pricing/",
-  "updated_at": "2026-05-02",
-  "notes": "Standard API processing rates copied into PPAP for local cost estimation. Update this JSON when OpenAI pricing changes.",
+  "updated_at": "2026-05-03",
+  "notes": "Standard API processing rates copied into PPAP for local cost estimation. GPT-5.3-Codex-Spark is a research preview in Codex rate cards, so PPAP temporarily estimates it with the GPT-5.3-Codex API rate.",
   "models": {
     "gpt-5.5": {
       "input": 5,
@@ -25,6 +25,22 @@
       "input": 0.2,
       "cached_input": 0.02,
       "output": 1.25
+    },
+    "gpt-5.3-codex": {
+      "input": 1.75,
+      "cached_input": 0.175,
+      "output": 14
+    },
+    "gpt-5.3-codex-spark": {
+      "input": 1.75,
+      "cached_input": 0.175,
+      "output": 14,
+      "aliases": [
+        "gpt-5.3-codex-spark-low",
+        "gpt-5.3-codex-spark-medium",
+        "gpt-5.3-codex-spark-high",
+        "gpt-5.3-codex-spark-xhigh"
+      ]
     },
     "gpt-5": {
       "input": 1.25,

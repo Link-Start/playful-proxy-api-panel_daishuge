@@ -117,6 +117,8 @@ const pricingAliases = (() => {
 const safeNumber = (value: number | null | undefined): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : 0;
 
+const thinkingLevelSuffixes = ['low', 'medium', 'high', 'xhigh'];
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -128,11 +130,22 @@ const detailTimestamp = (detail: UsageRequestDetail): number => {
 const normalizeModelName = (modelName: string): string[] => {
   const raw = modelName.trim().toLowerCase();
   const variants = new Set<string>();
-  if (raw) variants.add(raw);
-  const slashTail = raw.split('/').pop();
-  if (slashTail) variants.add(slashTail);
-  const colonTail = raw.split(':').pop();
-  if (colonTail) variants.add(colonTail);
+  const addVariant = (value: string | undefined) => {
+    const normalized = (value ?? '').trim().toLowerCase();
+    if (!normalized) return;
+    variants.add(normalized);
+    const parenthesized = normalized.match(/^(.*)\((low|medium|high|xhigh)\)$/);
+    if (parenthesized?.[1]) variants.add(parenthesized[1]);
+    thinkingLevelSuffixes.forEach((suffix) => {
+      const marker = `-${suffix}`;
+      if (normalized.endsWith(marker)) {
+        variants.add(normalized.slice(0, -marker.length));
+      }
+    });
+  };
+  addVariant(raw);
+  addVariant(raw.split('/').pop());
+  addVariant(raw.split(':').pop());
   return Array.from(variants);
 };
 

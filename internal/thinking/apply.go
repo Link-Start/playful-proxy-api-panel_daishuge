@@ -105,7 +105,7 @@ func ApplyThinking(body []byte, model string, fromFormat string, toFormat string
 	}
 
 	// 2. Parse suffix and get modelInfo
-	suffixResult := ParseSuffix(model)
+	suffixResult := ParseSuffixForModel(model, providerKey)
 	baseModel := suffixResult.ModelName
 	// Use provider-specific lookup to handle capability differences across providers.
 	modelInfo := registry.LookupModelInfo(baseModel, providerKey)

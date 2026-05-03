@@ -1265,7 +1265,7 @@
     "total_tokens": "Всего Tokens",
     "cached_tokens": "Cached Tokens",
     "estimated_cost": "Оценка стоимости",
-    "pricing_source": "Оценка по стандартным ценам OpenAI на {{date}}, единица {{unit}}",
+    "pricing_source": "Оценка по стандартным ценам OpenAI на {{date}}, единица {{unit}}; Spark временно использует оценку GPT-5.3-Codex на период preview",
     "priced_requests": "Запросов с ценой: {{count}}",
     "average_value": "Среднее значение",
     "total_throughput": "Общая пропускная способность",

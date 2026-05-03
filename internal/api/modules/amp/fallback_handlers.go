@@ -139,7 +139,7 @@ func (fh *FallbackHandler) WrapHandler(handler gin.HandlerFunc) gin.HandlerFunc 
 		}
 
 		// Normalize model (handles dynamic thinking suffixes)
-		suffixResult := thinking.ParseSuffix(modelName)
+		suffixResult := thinking.ParseSuffixForModel(modelName)
 		normalizedModel := suffixResult.ModelName
 		thinkingSuffix := ""
 		if suffixResult.HasSuffix {
@@ -163,13 +163,13 @@ func (fh *FallbackHandler) WrapHandler(handler gin.HandlerFunc) gin.HandlerFunc 
 			// Preserve dynamic thinking suffix (e.g. "(xhigh)") when mapping applies, unless the target
 			// already specifies its own thinking suffix.
 			if thinkingSuffix != "" {
-				mappedSuffixResult := thinking.ParseSuffix(mappedModel)
+				mappedSuffixResult := thinking.ParseSuffixForModel(mappedModel)
 				if !mappedSuffixResult.HasSuffix {
 					mappedModel += thinkingSuffix
 				}
 			}
 
-			mappedBaseModel := thinking.ParseSuffix(mappedModel).ModelName
+			mappedBaseModel := thinking.ParseSuffixForModel(mappedModel).ModelName
 			mappedProviders := util.GetProviderName(mappedBaseModel)
 			if len(mappedProviders) == 0 {
 				return "", nil

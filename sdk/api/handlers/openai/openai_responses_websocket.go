@@ -485,11 +485,11 @@ func (h *OpenAIResponsesAPIHandler) websocketUpstreamSupportsIncrementalInputFor
 	}
 
 	resolvedModelName := modelName
-	initialSuffix := thinking.ParseSuffix(modelName)
+	initialSuffix := thinking.ParseSuffixAllowHyphen(modelName)
 	if initialSuffix.ModelName == "auto" {
 		resolvedBase := util.ResolveAutoModel(initialSuffix.ModelName)
 		if initialSuffix.HasSuffix {
-			resolvedModelName = fmt.Sprintf("%s(%s)", resolvedBase, initialSuffix.RawSuffix)
+			resolvedModelName = thinking.FormatSuffix(resolvedBase, initialSuffix)
 		} else {
 			resolvedModelName = resolvedBase
 		}
@@ -497,7 +497,7 @@ func (h *OpenAIResponsesAPIHandler) websocketUpstreamSupportsIncrementalInputFor
 		resolvedModelName = util.ResolveAutoModel(modelName)
 	}
 
-	parsed := thinking.ParseSuffix(resolvedModelName)
+	parsed := thinking.ParseSuffixForModel(resolvedModelName)
 	baseModel := strings.TrimSpace(parsed.ModelName)
 	providers := util.GetProviderName(baseModel)
 	if len(providers) == 0 && baseModel != resolvedModelName {
@@ -558,7 +558,7 @@ func responsesWebsocketAuthAvailableForModel(auth *coreauth.Auth, modelName stri
 	if modelName != "" && len(auth.ModelStates) > 0 {
 		state, ok := auth.ModelStates[modelName]
 		if (!ok || state == nil) && modelName != "" {
-			baseModel := strings.TrimSpace(thinking.ParseSuffix(modelName).ModelName)
+			baseModel := strings.TrimSpace(thinking.ParseSuffixForModel(modelName).ModelName)
 			if baseModel != "" && baseModel != modelName {
 				state, ok = auth.ModelStates[baseModel]
 			}

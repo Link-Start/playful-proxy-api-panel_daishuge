@@ -848,11 +848,11 @@ func statusFromError(err error) int {
 
 func (h *BaseAPIHandler) getRequestDetails(modelName string) (providers []string, normalizedModel string, err *interfaces.ErrorMessage) {
 	resolvedModelName := modelName
-	initialSuffix := thinking.ParseSuffix(modelName)
+	initialSuffix := thinking.ParseSuffixAllowHyphen(modelName)
 	if initialSuffix.ModelName == "auto" {
 		resolvedBase := util.ResolveAutoModel(initialSuffix.ModelName)
 		if initialSuffix.HasSuffix {
-			resolvedModelName = fmt.Sprintf("%s(%s)", resolvedBase, initialSuffix.RawSuffix)
+			resolvedModelName = thinking.FormatSuffix(resolvedBase, initialSuffix)
 		} else {
 			resolvedModelName = resolvedBase
 		}
@@ -860,7 +860,7 @@ func (h *BaseAPIHandler) getRequestDetails(modelName string) (providers []string
 		resolvedModelName = util.ResolveAutoModel(modelName)
 	}
 
-	parsed := thinking.ParseSuffix(resolvedModelName)
+	parsed := thinking.ParseSuffixForModel(resolvedModelName)
 	baseModel := strings.TrimSpace(parsed.ModelName)
 
 	if strings.EqualFold(baseModel, "gpt-image-2") {

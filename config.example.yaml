@@ -73,6 +73,10 @@ usage-statistics-path: ""
 # How often usage statistics are flushed to disk. Defaults to 30 seconds when omitted or <= 0.
 usage-statistics-flush-interval-seconds: 30
 
+# How long (in seconds) Redis usage queue items are retained in memory for the RESP interface (LPOP/RPOP).
+# Default: 60. Max: 3600.
+redis-usage-queue-retention-seconds: 60
+
 # Proxy URL. Supports socks5/http/https protocols. Example: socks5://user:pass@192.168.1.1:1080/
 # Per-entry proxy-url also supports "direct" or "none" to bypass both the global proxy-url and environment proxies explicitly.
 proxy-url: ""
@@ -330,6 +334,10 @@ nonstream-keepalive-interval: 0
 # you select the protocol surface, but inference backend selection can still follow the resolved
 # model/alias. For strict backend pinning, use unique aliases/prefixes or avoid overlapping names.
 # You can repeat the same name with different aliases to expose multiple client model names.
+# Models that declare thinking levels automatically expose -low, -medium, -high, and -xhigh
+# aliases when the level is supported (for example, gpt-5.3-codex-spark-high).
+# Requests may use either model(high) or model-high. Explicit configured names and aliases
+# keep priority over automatic suffix parsing, so old configs remain compatible.
 # oauth-model-alias:
 #   gemini-cli:
 #     - name: "gemini-2.5-pro"          # original model name under this channel
@@ -350,6 +358,11 @@ nonstream-keepalive-interval: 0
 #   codex:
 #     - name: "gpt-5"
 #       alias: "g5"
+#     # Optional: pin an alias to a fixed upstream reasoning effort.
+#     # Requests to spark-fast or spark-fast-low both resolve to gpt-5.3-codex-spark(high).
+#     - name: "gpt-5.3-codex-spark-high"
+#       alias: "spark-fast"
+#       fork: true
 #   kimi:
 #     - name: "kimi-k2.5"
 #       alias: "k2.5"
