@@ -170,6 +170,9 @@ type Manager struct {
 	// It is initialized in NewManager; never Load() before first Store().
 	runtimeConfig atomic.Value
 
+	upstreamLimitersMu sync.Mutex
+	upstreamLimiters   map[string]*upstreamConcurrencyLimiter
+
 	// Optional HTTP RoundTripper provider injected by host.
 	rtProvider RoundTripperProvider
 
@@ -194,6 +197,7 @@ func NewManager(store Store, selector Selector, hook Hook) *Manager {
 		auths:            make(map[string]*Auth),
 		providerOffsets:  make(map[string]int),
 		modelPoolOffsets: make(map[string]int),
+		upstreamLimiters: make(map[string]*upstreamConcurrencyLimiter),
 	}
 	// atomic.Value requires non-nil initial value.
 	manager.runtimeConfig.Store(&internalconfig.Config{})
@@ -1332,6 +1336,10 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 			continue
 		}
 		attempted[auth.ID] = struct{}{}
+		permit, errPermit := m.acquireUpstreamConcurrency(execCtx, provider, auth, req)
+		if errPermit != nil {
+			return cliproxyexecutor.Response{}, errPermit
+		}
 		var authErr error
 		for _, upstreamModel := range models {
 			resultModel := m.stateModelForExecution(auth, routeModel, upstreamModel, pooled)
@@ -1341,6 +1349,9 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 			result := Result{AuthID: auth.ID, Provider: provider, Model: resultModel, Success: errExec == nil}
 			if errExec != nil {
 				if errCtx := execCtx.Err(); errCtx != nil {
+					if permit != nil {
+						permit.Release()
+					}
 					return cliproxyexecutor.Response{}, errCtx
 				}
 				result.Error = &Error{Message: errExec.Error()}
@@ -1352,13 +1363,22 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 				}
 				m.MarkResult(execCtx, result)
 				if isRequestInvalidError(errExec) {
+					if permit != nil {
+						permit.Release()
+					}
 					return cliproxyexecutor.Response{}, errExec
 				}
 				authErr = errExec
 				continue
 			}
 			m.MarkResult(execCtx, result)
+			if permit != nil {
+				permit.Release()
+			}
 			return resp, nil
+		}
+		if permit != nil {
+			permit.Release()
 		}
 		if authErr != nil {
 			if isRequestInvalidError(authErr) {
@@ -1410,6 +1430,10 @@ func (m *Manager) executeCountMixedOnce(ctx context.Context, providers []string,
 			continue
 		}
 		attempted[auth.ID] = struct{}{}
+		permit, errPermit := m.acquireUpstreamConcurrency(execCtx, provider, auth, req)
+		if errPermit != nil {
+			return cliproxyexecutor.Response{}, errPermit
+		}
 		var authErr error
 		for _, upstreamModel := range models {
 			resultModel := m.stateModelForExecution(auth, routeModel, upstreamModel, pooled)
@@ -1419,6 +1443,9 @@ func (m *Manager) executeCountMixedOnce(ctx context.Context, providers []string,
 			result := Result{AuthID: auth.ID, Provider: provider, Model: resultModel, Success: errExec == nil}
 			if errExec != nil {
 				if errCtx := execCtx.Err(); errCtx != nil {
+					if permit != nil {
+						permit.Release()
+					}
 					return cliproxyexecutor.Response{}, errCtx
 				}
 				result.Error = &Error{Message: errExec.Error()}
@@ -1430,13 +1457,22 @@ func (m *Manager) executeCountMixedOnce(ctx context.Context, providers []string,
 				}
 				m.MarkResult(execCtx, result)
 				if isRequestInvalidError(errExec) {
+					if permit != nil {
+						permit.Release()
+					}
 					return cliproxyexecutor.Response{}, errExec
 				}
 				authErr = errExec
 				continue
 			}
 			m.MarkResult(execCtx, result)
+			if permit != nil {
+				permit.Release()
+			}
 			return resp, nil
+		}
+		if permit != nil {
+			permit.Release()
 		}
 		if authErr != nil {
 			if isRequestInvalidError(authErr) {
@@ -1487,8 +1523,15 @@ func (m *Manager) executeStreamMixedOnce(ctx context.Context, providers []string
 			continue
 		}
 		attempted[auth.ID] = struct{}{}
+		permit, errPermit := m.acquireUpstreamConcurrency(execCtx, provider, auth, req)
+		if errPermit != nil {
+			return nil, errPermit
+		}
 		streamResult, errStream := m.executeStreamWithModelPool(execCtx, executor, auth, provider, req, opts, routeModel, models, pooled)
 		if errStream != nil {
+			if permit != nil {
+				permit.Release()
+			}
 			if errCtx := execCtx.Err(); errCtx != nil {
 				return nil, errCtx
 			}
@@ -1497,6 +1540,13 @@ func (m *Manager) executeStreamMixedOnce(ctx context.Context, providers []string
 			}
 			lastErr = errStream
 			continue
+		}
+		if permit != nil {
+			if streamResult == nil {
+				permit.Release()
+			} else {
+				streamResult = streamResultWithPermitRelease(execCtx, streamResult, permit)
+			}
 		}
 		return streamResult, nil
 	}
