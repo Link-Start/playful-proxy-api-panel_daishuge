@@ -39,17 +39,38 @@ cp config.example.yaml config.yaml
 
 Default HTTP port は `8317` です。
 
-Docker で自ホストする場合は、この repository から build してください。
+Release archives は upstream CPA と同じ platform family を対象にします。Linux、Windows、macOS、FreeBSD に対して、Go が対応する `amd64` と `aarch64`/`arm64` を提供します。
+
+## Docker
+
+Docker image は `ghcr.io/daishuge/playful-proxy-api-panel` に公開され、`linux/amd64` と `linux/arm64` をサポートします。Image には同じ tag から build された PPAP management panel が含まれるため、`/management.html` は初回 download なしで使えます。
+
+Release archive または cloned checkout の中で:
 
 ```bash
-git clone https://github.com/daishuge/playful-proxy-api-panel.git
-cd playful-proxy-api-panel
-cp config.example.yaml config.yaml
-mkdir -p auths logs
+cp config.docker.example.yaml config.yaml
+mkdir -p auths logs data
+# edit config.yaml: replace change-me-management-key and change-me-api-key
+docker compose pull
+docker compose up -d
+```
+
+Local build を使う場合:
+
+```bash
 docker compose up -d --build
 ```
 
-`config.yaml`、`.env`、OAuth files、API keys、auth directories、logs、generated stores は git に commit しないでください。
+Default persistent paths in `docker-compose.yml`:
+
+- `./config.yaml` -> `/CLIProxyAPI/config.yaml`
+- `./auths` -> `/root/.cli-proxy-api`
+- `./data` -> `/CLIProxyAPI/data`
+- `./logs` -> `/CLIProxyAPI/logs`
+
+Docker bridge traffic は container 内では non-localhost として見えるため、`config.docker.example.yaml` は `remote-management.allow-remote` を有効化し、management key を必須にしています。Service を自分の machine 外へ公開する前に example key を置き換えてください。
+
+`config.yaml`、`.env`、OAuth files、API keys、auth directories、logs、data snapshots、generated stores は git に commit しないでください。
 
 ## Configuration Notes
 
@@ -58,6 +79,7 @@ docker compose up -d --build
 - `usage-statistics-enabled`: built-in usage snapshot を有効化。
 - `usage-statistics-path`: snapshot file の保存先を指定。
 - `redis-usage-queue-retention-seconds`: Redis usage queue retention を調整。
+- `/v0/management/usage-queue`: Redis-compatible usage stream の queued records を external integrations 向けに pop。
 - `oauth-model-alias`: friendly model alias を定義し、legacy config style も維持。
 
 thinking levels を宣言している model では、PPAP は次のような aliases を自動で公開できます。
@@ -90,6 +112,7 @@ References:
 - Management panel source: [`web/management-panel`](web/management-panel)
 - Management API docs: [help.router-for.me/management/api](https://help.router-for.me/management/api)
 - Usage endpoints: `/v0/management/usage`, `/v0/management/usage/export`, `/v0/management/usage/import`
+- Usage queue endpoint: `/v0/management/usage-queue?count=100`
 - Amp CLI guide: [help.router-for.me/agent-client/amp-cli.html](https://help.router-for.me/agent-client/amp-cli.html)
 
 Release asset の `management.html` は backend binaries と同じ tag から build されます。

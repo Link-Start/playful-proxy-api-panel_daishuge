@@ -1,6 +1,7 @@
 services:
   cli-proxy-api:
-    image: ${CLI_PROXY_IMAGE:-cliproxyapi-fork:local}
+    image: ${CLI_PROXY_IMAGE:-ghcr.io/daishuge/playful-proxy-api-panel:latest}
+    pull_policy: missing
     build:
       context: .
       dockerfile: Dockerfile
@@ -13,6 +14,8 @@ services:
     #   - .env
     environment:
       DEPLOY: ${DEPLOY:-}
+      MANAGEMENT_STATIC_PATH: /CLIProxyAPI/static/management.html
+      WRITABLE_PATH: /CLIProxyAPI/data
     ports:
       - "8317:8317"
       - "8085:8085"
@@ -23,5 +26,6 @@ services:
     volumes:
       - ${CLI_PROXY_CONFIG_PATH:-./config.yaml}:/CLIProxyAPI/config.yaml
       - ${CLI_PROXY_AUTH_PATH:-./auths}:/root/.cli-proxy-api
+      - ${CLI_PROXY_DATA_PATH:-./data}:/CLIProxyAPI/data
       - ${CLI_PROXY_LOG_PATH:-./logs}:/CLIProxyAPI/logs
     restart: unless-stopped

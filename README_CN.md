@@ -39,17 +39,38 @@ cp config.example.yaml config.yaml
 
 默认 HTTP 端口是 `8317`。
 
-Docker 自托管建议直接从本仓库构建，确保容器里包含 PPAP 代码：
+Release 压缩包覆盖与上游 CPA 相同的平台族：Linux、Windows、macOS、FreeBSD，并提供 Go 支持的 `amd64` 与 `aarch64`/`arm64` 架构。
+
+## Docker
+
+Docker 镜像发布在 `ghcr.io/daishuge/playful-proxy-api-panel`，支持 `linux/amd64` 和 `linux/arm64`。镜像内置同 tag 构建的 PPAP 管理面板，`/management.html` 不需要先下载面板资源。
+
+在 release 压缩包或 clone 出来的仓库目录中：
 
 ```bash
-git clone https://github.com/daishuge/playful-proxy-api-panel.git
-cd playful-proxy-api-panel
-cp config.example.yaml config.yaml
-mkdir -p auths logs
+cp config.docker.example.yaml config.yaml
+mkdir -p auths logs data
+# 编辑 config.yaml，替换 change-me-management-key 和 change-me-api-key
+docker compose pull
+docker compose up -d
+```
+
+如果要本地构建镜像：
+
+```bash
 docker compose up -d --build
 ```
 
-不要把 `config.yaml`、`.env`、OAuth 文件、API key、auth 目录、日志和生成数据提交进 git。
+`docker-compose.yml` 默认持久化路径：
+
+- `./config.yaml` -> `/CLIProxyAPI/config.yaml`
+- `./auths` -> `/root/.cli-proxy-api`
+- `./data` -> `/CLIProxyAPI/data`
+- `./logs` -> `/CLIProxyAPI/logs`
+
+Docker bridge 流量在容器内会被视为非 localhost，所以 `config.docker.example.yaml` 默认开启 `remote-management.allow-remote`，并要求配置管理密钥。把服务暴露到本机之外前必须替换示例密钥。
+
+不要把 `config.yaml`、`.env`、OAuth 文件、API key、auth 目录、日志、数据快照和生成数据提交进 git。
 
 ## 配置重点
 
@@ -58,6 +79,7 @@ docker compose up -d --build
 - `usage-statistics-enabled`：启用内置使用量快照。
 - `usage-statistics-path`：可选，把快照文件放到指定路径。
 - `redis-usage-queue-retention-seconds`：Redis usage queue 启用时的保留时间。
+- `/v0/management/usage-queue`：弹出 Redis-compatible usage stream 中排队的使用量记录，方便外部集成消费。
 - `oauth-model-alias`：配置友好模型别名，同时兼容老配置写法。
 
 对于明确支持 thinking levels 的模型，PPAP 可以自动暴露：
@@ -90,6 +112,7 @@ PPAP 已把 `gpt-5.3-codex-spark` 加入本地 usage 成本估算。官方 previ
 - 管理面板源码：[`web/management-panel`](web/management-panel)
 - 管理 API 文档：[help.router-for.me/cn/management/api](https://help.router-for.me/cn/management/api)
 - Usage 接口：`/v0/management/usage`、`/v0/management/usage/export`、`/v0/management/usage/import`
+- Usage queue 接口：`/v0/management/usage-queue?count=100`
 - Amp CLI 指南：[help.router-for.me/cn/agent-client/amp-cli.html](https://help.router-for.me/cn/agent-client/amp-cli.html)
 
 Release 里的 `management.html` 与后端二进制来自同一个 tag，运行中的 PPAP 可以直接把面板更新地址指向本仓库。

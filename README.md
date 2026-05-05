@@ -38,17 +38,38 @@ cp config.example.yaml config.yaml
 
 The default HTTP port is `8317`.
 
-For Docker self-hosting, build from this repository so the container contains PPAP-specific code:
+Release archives cover the same platform families as upstream CPA: Linux, Windows, macOS, and FreeBSD on `amd64` and `aarch64`/`arm64` where Go supports them.
+
+## Docker
+
+The Docker image is published as `ghcr.io/daishuge/playful-proxy-api-panel` for `linux/amd64` and `linux/arm64`. The image bundles the PPAP management panel built from the same tag, so `/management.html` works without downloading a panel asset first.
+
+From a release archive or cloned checkout:
 
 ```bash
-git clone https://github.com/daishuge/playful-proxy-api-panel.git
-cd playful-proxy-api-panel
-cp config.example.yaml config.yaml
-mkdir -p auths logs
+cp config.docker.example.yaml config.yaml
+mkdir -p auths logs data
+# edit config.yaml: replace change-me-management-key and change-me-api-key
+docker compose pull
+docker compose up -d
+```
+
+To build the image locally instead of pulling GHCR:
+
+```bash
 docker compose up -d --build
 ```
 
-Keep `config.yaml`, `.env`, OAuth files, API keys, auth directories, logs, and generated stores out of git.
+Default persistent paths in `docker-compose.yml`:
+
+- `./config.yaml` -> `/CLIProxyAPI/config.yaml`
+- `./auths` -> `/root/.cli-proxy-api`
+- `./data` -> `/CLIProxyAPI/data`
+- `./logs` -> `/CLIProxyAPI/logs`
+
+Docker bridge requests are remote from the container's point of view, so `config.docker.example.yaml` enables `remote-management.allow-remote` and requires a management key. Replace the example keys before exposing the service beyond your own machine.
+
+Keep `config.yaml`, `.env`, OAuth files, API keys, auth directories, logs, data snapshots, and generated stores out of git.
 
 ## Configuration Notes
 
@@ -57,6 +78,7 @@ Start from [`config.example.yaml`](config.example.yaml). The most useful PPAP-sp
 - `usage-statistics-enabled`: enable built-in usage snapshots.
 - `usage-statistics-path`: optionally move the usage snapshot away from the config directory.
 - `redis-usage-queue-retention-seconds`: tune Redis usage queue retention when Redis usage queueing is enabled.
+- `/v0/management/usage-queue`: pop queued usage records for integrations that consume the Redis-compatible usage stream.
 - `oauth-model-alias`: define friendly model aliases while preserving old config compatibility.
 
 For models that declare thinking levels, PPAP can expose automatic aliases such as:
@@ -89,6 +111,7 @@ References:
 - Management panel source: [`web/management-panel`](web/management-panel)
 - Management API docs: [help.router-for.me/management/api](https://help.router-for.me/management/api)
 - Usage endpoints: `/v0/management/usage`, `/v0/management/usage/export`, `/v0/management/usage/import`
+- Usage queue endpoint: `/v0/management/usage-queue?count=100`
 - Amp CLI guide: [help.router-for.me/agent-client/amp-cli.html](https://help.router-for.me/agent-client/amp-cli.html)
 
 The release asset `management.html` is built from the same tag as the backend binaries, so a running PPAP instance can point its panel updater at this repository.
