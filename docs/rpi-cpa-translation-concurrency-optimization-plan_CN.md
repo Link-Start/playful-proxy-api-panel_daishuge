@@ -205,6 +205,7 @@ upstream-concurrency:
 
 - `sdk/cliproxy/auth/conductor.go`
 - `sdk/cliproxy/auth/conductor_overrides_test.go`
+- `internal/runtime/executor/codex_executor.go`
 
 当前逻辑：
 
@@ -218,6 +219,13 @@ upstream-concurrency:
 - P2 完成后，如果仍出现少量 EOF，可以只对“请求未向下游输出任何字节前的 transport EOF”做一次短抖动重试，例如 `100-500ms` jitter。
 - 不要对所有 500 统一即时重试，避免真实上游故障时形成二次风暴。
 - 可以把 `Post ... EOF` 归类为 transient transport error，日志单独打 `upstream_transport_eof`，便于统计。
+
+2026-05-07 实施状态：
+
+- 已在 Codex HTTP executor 层只针对连接级 transient transport error 增加一次短抖动重试，覆盖 `EOF`、`unexpected EOF`、`connection reset by peer`、idle connection closed、HTTP/2 GOAWAY 等尚未向下游输出内容的失败。
+- 重试仍在已有 upstream concurrency permit 内执行，避免绕过 P2 并发闸门。
+- 最终失败统一归类为 `502` / `upstream_transport_eof`，便于从错误日志和客户端响应中区分上游传输断流与普通应用错误。
+- 已补测试覆盖 EOF 后第二次请求成功、错误归类，以及请求日志中的 `Cookie` / `Set-Cookie` 脱敏。
 
 收益：
 
