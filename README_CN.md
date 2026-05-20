@@ -13,6 +13,8 @@
 
 - **内置 usage 分析**：恢复 `/v0/management/usage`、导入/导出接口、本地快照持久化，并记录缓存命中率、首字响应时间、平均耗时、TPS、Token 细分、模型/API 汇总。
 - **管理面板和后端同步发布**：前端源码在 [`web/management-panel`](web/management-panel)，每个 release 都带同 tag 构建的 `management.html`。
+- **可选全量对话日志**：需要时可以手动启用受保护的请求/响应正文日志，并在管理面板里浏览。
+- **可选上游预设 prompt**：需要时可以把 operator prompt 加到上游 chat-like 请求开头，但不会返回给 API 调用方。
 - **把 Codex 当主场景维护**：支持 OpenAI Codex OAuth、GPT 模型路由、Spark 定价估算、thinking 强度别名。
 - **thinking 强度写法统一**：`model(high)` 和 `model-high` 都支持，强度为 `low`、`medium`、`high`、`xhigh`；显式 alias 和真实模型名优先。
 - **继续跟上游兼容**：能合的上游更新继续合；当前已纳入 Redis usage queue retention，同时保留 PPAP 自己的 usage persistence。
@@ -26,6 +28,8 @@
 - 多账户路由和负载均衡
 - Gemini CLI、AI Studio Build、Claude Code、OpenAI Codex、Amp CLI 支持
 - 通过配置接入 OpenAI-compatible 上游，例如 OpenRouter
+- 手动启用后可在受保护管理入口浏览全量对话日志
+- 手动启用后可向上游注入不会下发给用户的预设 prompt
 - 可复用 Go SDK
 
 ## 快速开始
@@ -68,6 +72,14 @@ docker compose up -d --build
 - `./data` -> `/CLIProxyAPI/data`
 - `./logs` -> `/CLIProxyAPI/logs`
 
+Compose 文件保持上游兼容的默认宿主机端口，但每个宿主机端口都可以从 `.env` 覆盖。例如宿主机 `1455` 已被占用，并且不需要 Codex OAuth callback 固定使用这个本机端口时：
+
+```env
+CLI_PROXY_CODEX_CALLBACK_PORT=1456
+```
+
+如果依赖内置 Codex OAuth callback，请保持宿主机 `1455` 可用，因为 OAuth redirect URI 使用 `http://localhost:1455/auth/callback`。
+
 Docker bridge 流量在容器内会被视为非 localhost，所以 `config.docker.example.yaml` 默认开启 `remote-management.allow-remote`，并要求配置管理密钥。把服务暴露到本机之外前必须替换示例密钥。
 
 不要把 `config.yaml`、`.env`、OAuth 文件、API key、auth 目录、日志、数据快照和生成数据提交进 git。
@@ -80,7 +92,11 @@ Docker bridge 流量在容器内会被视为非 localhost，所以 `config.docke
 - `usage-statistics-path`：可选，把快照文件放到指定路径。
 - `redis-usage-queue-retention-seconds`：Redis usage queue 启用时的保留时间。
 - `/v0/management/usage-queue`：弹出 Redis-compatible usage stream 中排队的使用量记录，方便外部集成消费。
+- `conversation-log`：默认关闭；只有需要受保护的完整请求/响应正文日志时才启用。
+- `preset-prompt`：默认关闭；只把 operator prompt 注入上游 chat-like 请求。
 - `oauth-model-alias`：配置友好模型别名，同时兼容老配置写法。
+
+上线前先读 [Conversation Logging And Preset Prompt Operations](docs/operations-conversation-logging-and-preset-prompt.md)，尤其是日志隐私、retention 和 prompt 不外泄检查。
 
 对于明确支持 thinking levels 的模型，PPAP 可以自动暴露：
 
@@ -113,6 +129,7 @@ PPAP 已把 `gpt-5.3-codex-spark` 加入本地 usage 成本估算。官方 previ
 - 管理 API 文档：[help.router-for.me/cn/management/api](https://help.router-for.me/cn/management/api)
 - Usage 接口：`/v0/management/usage`、`/v0/management/usage/export`、`/v0/management/usage/import`
 - Usage queue 接口：`/v0/management/usage-queue?count=100`
+- Conversation log 接口：`/v0/management/conversation-logs`、`/v0/management/conversation-logs/tail`、`/v0/management/conversation-logs/{id}`
 - Amp CLI 指南：[help.router-for.me/cn/agent-client/amp-cli.html](https://help.router-for.me/cn/agent-client/amp-cli.html)
 
 Release 里的 `management.html` 与后端二进制来自同一个 tag，运行中的 PPAP 可以直接把面板更新地址指向本仓库。
@@ -132,6 +149,7 @@ PPAP 保留内置 usage 分析，同时继续兼容上游风格的 Management AP
 - 高级执行器与翻译器：[docs/sdk-advanced_CN.md](docs/sdk-advanced_CN.md)
 - 认证与访问：[docs/sdk-access_CN.md](docs/sdk-access_CN.md)
 - 凭据加载/更新：[docs/sdk-watcher_CN.md](docs/sdk-watcher_CN.md)
+- 运维说明：[Conversation Logging And Preset Prompt Operations](docs/operations-conversation-logging-and-preset-prompt.md)
 - 自定义 Provider 示例：[`examples/custom-provider`](examples/custom-provider)
 
 ## 许可证

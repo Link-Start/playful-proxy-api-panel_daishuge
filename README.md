@@ -12,6 +12,8 @@ Use upstream CLIProxyAPI when you want the vanilla project. Use PPAP when you wa
 
 - **Usage analytics built in**: restored `/v0/management/usage`, import/export endpoints, persistent local snapshots, cache hit rate, first-byte latency, average latency, TPS, token breakdowns, and per-model/per-API rollups.
 - **Panel and backend released together**: the management panel source lives in [`web/management-panel`](web/management-panel), and each release ships the matching `management.html`.
+- **Opt-in full conversation logs**: operators can enable protected request/response body logs and browse them from the management panel.
+- **Opt-in upstream preset prompt**: deployments can prepend an operator prompt to upstream chat-like requests without returning that prompt to API clients.
 - **Codex is treated as a primary workflow**: OpenAI Codex OAuth, GPT model routing, Spark pricing estimation, and thinking-strength aliases are maintained in this fork.
 - **Thinking aliases are predictable**: both `model(high)` and `model-high` work for `low`, `medium`, `high`, and `xhigh`; explicit aliases and exact model names stay higher priority.
 - **Upstream compatibility is still the baseline**: upstream fixes are merged where they do not conflict with PPAP behavior. Recent Redis usage queue retention support is included.
@@ -25,6 +27,8 @@ Use upstream CLIProxyAPI when you want the vanilla project. Use PPAP when you wa
 - Multi-account routing and load balancing
 - Gemini CLI, AI Studio Build, Claude Code, OpenAI Codex, and Amp CLI support
 - OpenAI-compatible upstream providers such as OpenRouter through config
+- Protected full conversation log browsing when explicitly enabled
+- Upstream-only preset prompt injection when explicitly enabled
 - Reusable Go SDK for embedding the proxy
 
 ## Quick Start
@@ -87,7 +91,11 @@ Start from [`config.example.yaml`](config.example.yaml). The most useful PPAP-sp
 - `usage-statistics-path`: optionally move the usage snapshot away from the config directory.
 - `redis-usage-queue-retention-seconds`: tune Redis usage queue retention when Redis usage queueing is enabled.
 - `/v0/management/usage-queue`: pop queued usage records for integrations that consume the Redis-compatible usage stream.
+- `conversation-log`: disabled by default; enable only when you want protected full request/response body logs.
+- `preset-prompt`: disabled by default; injects an operator prompt only into upstream chat-like requests.
 - `oauth-model-alias`: define friendly model aliases while preserving old config compatibility.
+
+See [Conversation Logging And Preset Prompt Operations](docs/operations-conversation-logging-and-preset-prompt.md) before enabling either feature in production.
 
 For models that declare thinking levels, PPAP can expose automatic aliases such as:
 
@@ -120,6 +128,7 @@ References:
 - Management API docs: [help.router-for.me/management/api](https://help.router-for.me/management/api)
 - Usage endpoints: `/v0/management/usage`, `/v0/management/usage/export`, `/v0/management/usage/import`
 - Usage queue endpoint: `/v0/management/usage-queue?count=100`
+- Conversation log endpoints: `/v0/management/conversation-logs`, `/v0/management/conversation-logs/tail`, `/v0/management/conversation-logs/{id}`
 - Amp CLI guide: [help.router-for.me/agent-client/amp-cli.html](https://help.router-for.me/agent-client/amp-cli.html)
 
 The release asset `management.html` is built from the same tag as the backend binaries, so a running PPAP instance can point its panel updater at this repository.
@@ -139,6 +148,7 @@ PPAP keeps built-in usage analytics, but it also stays compatible with upstream-
 - Advanced executors and translators: [docs/sdk-advanced.md](docs/sdk-advanced.md)
 - Access: [docs/sdk-access.md](docs/sdk-access.md)
 - Watcher: [docs/sdk-watcher.md](docs/sdk-watcher.md)
+- Operations: [Conversation Logging And Preset Prompt Operations](docs/operations-conversation-logging-and-preset-prompt.md)
 - Custom provider example: [`examples/custom-provider`](examples/custom-provider)
 
 ## License
