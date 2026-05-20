@@ -64,6 +64,9 @@ const getErrorMessage = (err: unknown): string => {
   return typeof message === 'string' ? message : '';
 };
 
+const isLoggingDisabledError = (err: unknown): boolean =>
+  getErrorMessage(err).trim().toLowerCase() === 'logging to file disabled';
+
 type TabType = 'logs' | 'errors' | 'conversations';
 
 const formatBytes = (value?: number): string => {
@@ -150,7 +153,9 @@ export function LogsPage() {
       const data = await logsApi.fetchStorage();
       setLogStorage(data);
     } catch (err: unknown) {
-      console.error('Failed to load log storage:', err);
+      if (!isLoggingDisabledError(err)) {
+        console.error('Failed to load log storage:', err);
+      }
       setLogStorage(null);
     } finally {
       setStorageLoading(false);
@@ -219,7 +224,9 @@ export function LogsPage() {
         setLogState({ buffer, visibleFrom });
       }
     } catch (err: unknown) {
-      console.error('Failed to load logs:', err);
+      if (!isLoggingDisabledError(err)) {
+        console.error('Failed to load logs:', err);
+      }
       if (!incremental) {
         setError(getErrorMessage(err) || t('logs.load_error'));
       }
@@ -287,7 +294,9 @@ export function LogsPage() {
       // API returns { files: [...] }.
       setErrorLogs(Array.isArray(res.files) ? res.files : []);
     } catch (err: unknown) {
-      console.error('Failed to load error logs:', err);
+      if (!isLoggingDisabledError(err)) {
+        console.error('Failed to load error logs:', err);
+      }
       setErrorLogs([]);
       const message = getErrorMessage(err);
       setErrorLogsError(
