@@ -21,6 +21,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
+	coreusage "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/usage"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v6/sdk/translator"
 	"golang.org/x/net/context"
@@ -230,6 +231,18 @@ func requestExecutionMetadata(ctx context.Context) map[string]any {
 		meta[coreexecutor.DisallowFreeAuthMetadataKey] = true
 	}
 	return meta
+}
+
+func setReasoningEffortMetadata(meta map[string]any, handlerType, model string, rawJSON []byte) string {
+	if meta == nil {
+		return ""
+	}
+	effort := thinking.ExtractReasoningEffort(rawJSON, handlerType, model)
+	if effort == "" {
+		return ""
+	}
+	meta[coreexecutor.ReasoningEffortMetadataKey] = effort
+	return effort
 }
 
 // headersFromContext extracts the original HTTP request headers from the gin context
@@ -548,6 +561,8 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 	}
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
+	reasoningEffort := setReasoningEffortMetadata(reqMeta, handlerType, normalizedModel, rawJSON)
+	ctx = coreusage.WithReasoningEffort(ctx, reasoningEffort)
 	payload := h.applyPresetPromptToPayload(handlerType, rawJSON)
 	if len(payload) == 0 {
 		payload = nil
@@ -600,6 +615,8 @@ func (h *BaseAPIHandler) ExecuteCountWithAuthManager(ctx context.Context, handle
 	}
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
+	reasoningEffort := setReasoningEffortMetadata(reqMeta, handlerType, normalizedModel, rawJSON)
+	ctx = coreusage.WithReasoningEffort(ctx, reasoningEffort)
 	payload := rawJSON
 	if len(payload) == 0 {
 		payload = nil
@@ -656,6 +673,8 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 	}
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
+	reasoningEffort := setReasoningEffortMetadata(reqMeta, handlerType, normalizedModel, rawJSON)
+	ctx = coreusage.WithReasoningEffort(ctx, reasoningEffort)
 	payload := h.applyPresetPromptToPayload(handlerType, rawJSON)
 	if len(payload) == 0 {
 		payload = nil

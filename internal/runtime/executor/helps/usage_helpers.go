@@ -23,6 +23,7 @@ type UsageReporter struct {
 	authType    string
 	apiKey      string
 	source      string
+	reasoning   string
 	requestedAt time.Time
 	once        sync.Once
 }
@@ -36,6 +37,7 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
 		apiKey:      apiKey,
 		source:      resolveUsageSource(auth, apiKey),
 		authType:    resolveUsageAuthType(auth),
+		reasoning:   usage.ReasoningEffortFromContext(ctx),
 	}
 	if auth != nil {
 		reporter.authID = auth.ID
@@ -144,6 +146,7 @@ func (r *UsageReporter) buildRecordForModel(ctx context.Context, model string, d
 		AuthID:           r.authID,
 		AuthIndex:        r.authIndex,
 		AuthType:         r.authType,
+		ReasoningEffort:  r.reasoning,
 		RequestedAt:      r.requestedAt,
 		Latency:          r.latency(),
 		FirstByteLatency: r.firstByteLatency(ctx),
