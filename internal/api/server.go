@@ -251,8 +251,9 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	envAdminPassword = strings.TrimSpace(envAdminPassword)
 	envManagementSecret := envAdminPasswordSet && envAdminPassword != ""
 
+	conversationLogStore := conversationlog.NewStore(conversationlog.OptionsFromConfig(cfg, configFilePath))
 	baseHandlers := handlers.NewBaseAPIHandlers(&cfg.SDKConfig, authManager)
-	baseHandlers.SetConversationLogStore(conversationlog.NewStore(conversationlog.OptionsFromConfig(cfg, configFilePath)))
+	baseHandlers.SetConversationLogStore(conversationLogStore)
 
 	// Create server instance
 	s := &Server{
@@ -279,6 +280,7 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	applySignatureCacheConfig(nil, cfg)
 	// Initialize management handler
 	s.mgmt = managementHandlers.NewHandler(cfg, configFilePath, authManager)
+	s.mgmt.SetConversationLogStore(conversationLogStore)
 	if optionState.localPassword != "" {
 		s.mgmt.SetLocalPassword(optionState.localPassword)
 	}
@@ -569,6 +571,9 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.GET("/logs", s.mgmt.GetLogs)
 		mgmt.DELETE("/logs", s.mgmt.DeleteLogs)
 		mgmt.GET("/logs/storage", s.mgmt.GetLogStorage)
+		mgmt.GET("/conversation-logs", s.mgmt.ListConversationLogs)
+		mgmt.GET("/conversation-logs/tail", s.mgmt.TailConversationLogs)
+		mgmt.GET("/conversation-logs/:id", s.mgmt.GetConversationLog)
 		mgmt.GET("/request-error-logs", s.mgmt.GetRequestErrorLogs)
 		mgmt.GET("/request-error-logs/:name", s.mgmt.DownloadRequestErrorLog)
 		mgmt.GET("/request-log-by-id/:id", s.mgmt.GetRequestLogByID)
@@ -1086,11 +1091,13 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 	s.oldConfigYaml, _ = yaml.Marshal(cfg)
 
 	s.handlers.UpdateClients(&cfg.SDKConfig)
-	s.handlers.SetConversationLogStore(conversationlog.NewStore(conversationlog.OptionsFromConfig(cfg, s.configFilePath)))
+	conversationLogStore := conversationlog.NewStore(conversationlog.OptionsFromConfig(cfg, s.configFilePath))
+	s.handlers.SetConversationLogStore(conversationLogStore)
 
 	if s.mgmt != nil {
 		s.mgmt.SetConfig(cfg)
 		s.mgmt.SetAuthManager(s.handlers.AuthManager)
+		s.mgmt.SetConversationLogStore(conversationLogStore)
 	}
 
 	// Notify Amp module only when Amp config has changed.

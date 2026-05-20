@@ -319,6 +319,59 @@ func TestStoreListPaginationAcrossShards(t *testing.T) {
 	}
 }
 
+func TestStoreListFiltersAndCursor(t *testing.T) {
+	dir := t.TempDir()
+	current := time.Date(2026, 5, 20, 10, 30, 0, 0, time.UTC)
+	store := NewStore(Options{
+		Enabled:           true,
+		Directory:         dir,
+		MaxFileSizeBytes:  1024 * 1024,
+		MaxTotalSizeBytes: 2 * 1024 * 1024,
+		MaxEntryBytes:     4096,
+	})
+	store.SetNowForTest(func() time.Time {
+		current = current.Add(time.Minute)
+		return current
+	})
+
+	entries := []Entry{
+		{ID: "codex-old", RequestID: "req-1", Method: "POST", Path: "/v1/chat/completions", Provider: "codex", Model: "gpt-5.5", StatusCode: 200},
+		{ID: "openai-error", RequestID: "req-2", Method: "POST", Path: "/v1/responses", Provider: "openai", Model: "gpt-4.1", StatusCode: 502, Error: "upstream failed"},
+		{ID: "codex-new", RequestID: "req-3", Method: "POST", Path: "/v1/chat/completions", Provider: "codex", Model: "gpt-5.5", StatusCode: 200},
+	}
+	for _, entry := range entries {
+		if _, err := store.Write(entry); err != nil {
+			t.Fatalf("Write(%s) error = %v", entry.ID, err)
+		}
+	}
+
+	statusOK := 200
+	first, err := store.List(ListQuery{Limit: 1, Provider: "CODE", StatusCode: &statusOK})
+	if err != nil {
+		t.Fatalf("List(first) error = %v", err)
+	}
+	assertSummaryIDs(t, first.Entries, []string{"codex-new"})
+	if first.NextCursor == "" {
+		t.Fatalf("first filtered page NextCursor is empty")
+	}
+
+	second, err := store.List(ListQuery{Limit: 1, Provider: "code", StatusCode: &statusOK, Cursor: first.NextCursor})
+	if err != nil {
+		t.Fatalf("List(second) error = %v", err)
+	}
+	assertSummaryIDs(t, second.Entries, []string{"codex-old"})
+	if second.NextCursor != "" {
+		t.Fatalf("second filtered page NextCursor = %q, want empty", second.NextCursor)
+	}
+
+	hasError := true
+	errorsOnly, err := store.List(ListQuery{HasError: &hasError})
+	if err != nil {
+		t.Fatalf("List(errorsOnly) error = %v", err)
+	}
+	assertSummaryIDs(t, errorsOnly.Entries, []string{"openai-error"})
+}
+
 func TestStoreConcurrentWritesProduceReadableUniqueEntries(t *testing.T) {
 	store := NewStore(Options{
 		Enabled:           true,

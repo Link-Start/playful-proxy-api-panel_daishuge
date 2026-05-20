@@ -188,8 +188,16 @@ type EntrySummary struct {
 
 // ListQuery controls list pagination.
 type ListQuery struct {
-	Limit  int
-	Cursor string
+	Limit      int
+	Cursor     string
+	RequestID  string
+	Provider   string
+	Model      string
+	Path       string
+	StatusCode *int
+	HasError   *bool
+	From       time.Time
+	To         time.Time
 }
 
 // ListResult contains paginated summaries.
@@ -393,11 +401,16 @@ func (s *Store) List(query ListQuery) (ListResult, error) {
 				seen++
 				continue
 			}
+			summary := summaries[i]
+			if !summaryMatchesListQuery(summary, query) {
+				seen++
+				continue
+			}
 			if len(result.Entries) >= limit {
 				stoppedEarly = true
 				break
 			}
-			result.Entries = append(result.Entries, summaries[i])
+			result.Entries = append(result.Entries, summary)
 			seen++
 		}
 		if stoppedEarly {
@@ -405,7 +418,7 @@ func (s *Store) List(query ListQuery) (ListResult, error) {
 		}
 	}
 	if stoppedEarly {
-		result.NextCursor = strconv.Itoa(skip + len(result.Entries))
+		result.NextCursor = strconv.Itoa(seen)
 	}
 	return result, nil
 }
@@ -459,6 +472,42 @@ func parseCursor(raw string) (int, error) {
 		return 0, fmt.Errorf("invalid conversation log cursor")
 	}
 	return cursor, nil
+}
+
+func summaryMatchesListQuery(summary EntrySummary, query ListQuery) bool {
+	if !containsFold(summary.RequestID, query.RequestID) {
+		return false
+	}
+	if !containsFold(summary.Provider, query.Provider) {
+		return false
+	}
+	if !containsFold(summary.Model, query.Model) {
+		return false
+	}
+	if !containsFold(summary.Path, query.Path) {
+		return false
+	}
+	if query.StatusCode != nil && summary.StatusCode != *query.StatusCode {
+		return false
+	}
+	if query.HasError != nil && summary.HasError != *query.HasError {
+		return false
+	}
+	if !query.From.IsZero() && summary.CreatedAt.Before(query.From) {
+		return false
+	}
+	if !query.To.IsZero() && summary.CreatedAt.After(query.To) {
+		return false
+	}
+	return true
+}
+
+func containsFold(value string, filter string) bool {
+	filter = strings.TrimSpace(filter)
+	if filter == "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(value), strings.ToLower(filter))
 }
 
 func listConversationFiles(dir string, newestFirst bool) ([]string, error) {
