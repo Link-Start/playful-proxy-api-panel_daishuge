@@ -254,6 +254,7 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	conversationLogStore := conversationlog.NewStore(conversationlog.OptionsFromConfig(cfg, configFilePath))
 	baseHandlers := handlers.NewBaseAPIHandlers(&cfg.SDKConfig, authManager)
 	baseHandlers.SetConversationLogStore(conversationLogStore)
+	baseHandlers.SetPresetPromptConfig(cfg.PresetPrompt)
 
 	// Create server instance
 	s := &Server{
@@ -1091,6 +1092,7 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 	s.oldConfigYaml, _ = yaml.Marshal(cfg)
 
 	s.handlers.UpdateClients(&cfg.SDKConfig)
+	s.handlers.SetPresetPromptConfig(cfg.PresetPrompt)
 	conversationLogStore := conversationlog.NewStore(conversationlog.OptionsFromConfig(cfg, s.configFilePath))
 	s.handlers.SetConversationLogStore(conversationLogStore)
 

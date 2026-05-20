@@ -304,6 +304,9 @@ type BaseAPIHandler struct {
 	// Cfg holds the current application configuration.
 	Cfg *config.SDKConfig
 
+	presetPromptMu     sync.RWMutex
+	presetPromptConfig config.PresetPromptConfig
+
 	conversationLogMu    sync.RWMutex
 	conversationLogStore *conversationlog.Store
 }
@@ -545,7 +548,7 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 	}
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
-	payload := rawJSON
+	payload := h.applyPresetPromptToPayload(handlerType, rawJSON)
 	if len(payload) == 0 {
 		payload = nil
 	}
@@ -653,7 +656,7 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 	}
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
-	payload := rawJSON
+	payload := h.applyPresetPromptToPayload(handlerType, rawJSON)
 	if len(payload) == 0 {
 		payload = nil
 	}
