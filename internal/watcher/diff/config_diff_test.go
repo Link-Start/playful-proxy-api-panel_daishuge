@@ -1,6 +1,7 @@
 package diff
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
@@ -134,6 +135,33 @@ func TestBuildConfigChangeDetails_ConversationLog(t *testing.T) {
 	expectContains(t, details, "conversation-log.max-file-size-mb: 16 -> 32")
 	expectContains(t, details, "conversation-log.max-total-size-mb: 256 -> 512")
 	expectContains(t, details, "conversation-log.max-entry-bytes: 1024 -> 2048")
+}
+
+func TestBuildConfigChangeDetails_PresetPromptRedacted(t *testing.T) {
+	oldCfg := &config.Config{
+		PresetPrompt: config.PresetPromptConfig{
+			Enabled:  false,
+			Prompt:   "",
+			MaxBytes: 32,
+		},
+	}
+	newCfg := &config.Config{
+		PresetPrompt: config.PresetPromptConfig{
+			Enabled:  true,
+			Prompt:   "internal operator prompt",
+			MaxBytes: 64,
+		},
+	}
+
+	details := BuildConfigChangeDetails(oldCfg, newCfg)
+	expectContains(t, details, "preset-prompt.enabled: false -> true")
+	expectContains(t, details, "preset-prompt.prompt: added (redacted)")
+	expectContains(t, details, "preset-prompt.max-bytes: 32 -> 64")
+	for _, detail := range details {
+		if strings.Contains(detail, "internal operator prompt") {
+			t.Fatalf("preset prompt leaked in config diff: %v", details)
+		}
+	}
 }
 
 func TestBuildConfigChangeDetails_GeminiVertexHeadersAndForceMappings(t *testing.T) {

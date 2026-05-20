@@ -66,6 +66,15 @@ func TestRepositoryExampleConfigsParseAndPreservePPAPDefaults(t *testing.T) {
 			if cfg.ConversationLog.MaxEntryBytes != DefaultConversationLogEntryBytes {
 				t.Fatalf("conversation-log.max-entry-bytes = %d, want %d", cfg.ConversationLog.MaxEntryBytes, DefaultConversationLogEntryBytes)
 			}
+			if cfg.PresetPrompt.Enabled {
+				t.Fatal("preset-prompt.enabled = true, want false in example configs")
+			}
+			if cfg.PresetPrompt.Prompt != "" {
+				t.Fatalf("preset-prompt.prompt = %q, want empty in example configs", cfg.PresetPrompt.Prompt)
+			}
+			if cfg.PresetPrompt.MaxBytes != DefaultPresetPromptMaxBytes {
+				t.Fatalf("preset-prompt.max-bytes = %d, want %d", cfg.PresetPrompt.MaxBytes, DefaultPresetPromptMaxBytes)
+			}
 		})
 	}
 }

@@ -27,6 +27,8 @@ const (
 	DefaultConversationLogFileMB     = 16
 	DefaultConversationLogTotalMB    = 256
 	DefaultConversationLogEntryBytes = 2 * 1024 * 1024
+	DefaultPresetPromptMaxBytes      = 32 * 1024
+	PresetPromptHardMaxBytes         = 256 * 1024
 )
 
 // Config represents the application's configuration, loaded from a YAML file.
@@ -78,6 +80,9 @@ type Config struct {
 
 	// ConversationLog controls opt-in full conversation logging storage.
 	ConversationLog ConversationLogConfig `yaml:"conversation-log" json:"conversation-log"`
+
+	// PresetPrompt controls opt-in upstream-only prompt injection.
+	PresetPrompt PresetPromptConfig `yaml:"preset-prompt" json:"preset-prompt"`
 
 	// RedisUsageQueueRetentionSeconds controls how long (in seconds) usage queue items
 	// are retained in memory for the Redis RESP interface (LPOP/RPOP).
@@ -249,6 +254,55 @@ func (c *ConversationLogConfig) Normalize() {
 	if c.MaxEntryBytes <= 0 {
 		c.MaxEntryBytes = defaults.MaxEntryBytes
 	}
+}
+
+// PresetPromptConfig controls optional prompt text inserted only into upstream requests.
+// It is disabled by default because the prompt can change model behavior globally.
+type PresetPromptConfig struct {
+	// Enabled toggles upstream preset prompt injection.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Prompt is inserted into supported upstream chat-like requests when Enabled is true.
+	Prompt string `yaml:"prompt,omitempty" json:"prompt,omitempty"`
+	// MaxBytes bounds the configured prompt size. Values <= 0 use the default.
+	MaxBytes int `yaml:"max-bytes,omitempty" json:"max-bytes,omitempty"`
+}
+
+// DefaultPresetPromptConfig returns the safe default preset prompt settings.
+func DefaultPresetPromptConfig() PresetPromptConfig {
+	return PresetPromptConfig{
+		Enabled:  false,
+		Prompt:   "",
+		MaxBytes: DefaultPresetPromptMaxBytes,
+	}
+}
+
+// Normalize applies safe defaults and clamps preset prompt limits.
+func (c *PresetPromptConfig) Normalize() {
+	if c == nil {
+		return
+	}
+	if c.MaxBytes <= 0 {
+		c.MaxBytes = DefaultPresetPromptMaxBytes
+	}
+	if c.MaxBytes > PresetPromptHardMaxBytes {
+		log.WithFields(log.Fields{
+			"value": c.MaxBytes,
+			"max":   PresetPromptHardMaxBytes,
+		}).Warn("preset-prompt.max-bytes too large; clamping")
+		c.MaxBytes = PresetPromptHardMaxBytes
+	}
+}
+
+// Validate rejects unsafe or ineffective preset prompt settings.
+func (c PresetPromptConfig) Validate() error {
+	if c.Enabled && strings.TrimSpace(c.Prompt) == "" {
+		return errors.New("preset-prompt.prompt must be set when preset-prompt.enabled is true")
+	}
+	promptBytes := len([]byte(c.Prompt))
+	if promptBytes > c.MaxBytes {
+		return fmt.Errorf("preset-prompt.prompt is too large: %d bytes exceeds preset-prompt.max-bytes %d", promptBytes, c.MaxBytes)
+	}
+	return nil
 }
 
 // RemoteManagement holds management API configuration under 'remote-management'.
@@ -765,6 +819,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	cfg.ErrorLogsMaxFiles = 0
 	cfg.UsageStatisticsEnabled = false
 	cfg.ConversationLog = DefaultConversationLogConfig()
+	cfg.PresetPrompt = DefaultPresetPromptConfig()
 	cfg.RedisUsageQueueRetentionSeconds = 60
 	cfg.DisableCooling = false
 	cfg.DisableImageGeneration = DisableImageGenerationOff
@@ -829,6 +884,10 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	}
 
 	cfg.ConversationLog.Normalize()
+	cfg.PresetPrompt.Normalize()
+	if errValidatePresetPrompt := cfg.PresetPrompt.Validate(); errValidatePresetPrompt != nil {
+		return nil, errValidatePresetPrompt
+	}
 
 	if cfg.RedisUsageQueueRetentionSeconds <= 0 {
 		cfg.RedisUsageQueueRetentionSeconds = 60
@@ -1528,6 +1587,8 @@ func isKnownDefaultValue(path []string, node *yaml.Node) bool {
 			return node.Value == fmt.Sprintf("%d", DefaultConversationLogTotalMB)
 		case "conversation-log.max-entry-bytes":
 			return node.Value == fmt.Sprintf("%d", DefaultConversationLogEntryBytes)
+		case "preset-prompt.max-bytes":
+			return node.Value == fmt.Sprintf("%d", DefaultPresetPromptMaxBytes)
 		case "error-logs-max-files":
 			return node.Value == "10"
 		}

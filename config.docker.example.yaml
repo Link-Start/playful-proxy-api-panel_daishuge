@@ -38,6 +38,11 @@ conversation-log:
   max-total-size-mb: 256
   max-entry-bytes: 2097152
 
+preset-prompt:
+  enabled: false
+  prompt: ""
+  max-bytes: 32768
+
 proxy-url: ""
 force-model-prefix: false
 request-retry: 3

@@ -54,6 +54,20 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	if oldCfg.ConversationLog.MaxEntryBytes != newCfg.ConversationLog.MaxEntryBytes {
 		changes = append(changes, fmt.Sprintf("conversation-log.max-entry-bytes: %d -> %d", oldCfg.ConversationLog.MaxEntryBytes, newCfg.ConversationLog.MaxEntryBytes))
 	}
+	if oldCfg.PresetPrompt.Enabled != newCfg.PresetPrompt.Enabled {
+		changes = append(changes, fmt.Sprintf("preset-prompt.enabled: %t -> %t", oldCfg.PresetPrompt.Enabled, newCfg.PresetPrompt.Enabled))
+	}
+	switch {
+	case oldCfg.PresetPrompt.Prompt == "" && newCfg.PresetPrompt.Prompt != "":
+		changes = append(changes, "preset-prompt.prompt: added (redacted)")
+	case oldCfg.PresetPrompt.Prompt != "" && newCfg.PresetPrompt.Prompt == "":
+		changes = append(changes, "preset-prompt.prompt: removed")
+	case oldCfg.PresetPrompt.Prompt != newCfg.PresetPrompt.Prompt:
+		changes = append(changes, "preset-prompt.prompt: updated (redacted)")
+	}
+	if oldCfg.PresetPrompt.MaxBytes != newCfg.PresetPrompt.MaxBytes {
+		changes = append(changes, fmt.Sprintf("preset-prompt.max-bytes: %d -> %d", oldCfg.PresetPrompt.MaxBytes, newCfg.PresetPrompt.MaxBytes))
+	}
 	if oldCfg.RedisUsageQueueRetentionSeconds != newCfg.RedisUsageQueueRetentionSeconds {
 		changes = append(changes, fmt.Sprintf("redis-usage-queue-retention-seconds: %d -> %d", oldCfg.RedisUsageQueueRetentionSeconds, newCfg.RedisUsageQueueRetentionSeconds))
 	}

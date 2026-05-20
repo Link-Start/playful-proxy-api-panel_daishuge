@@ -81,6 +81,12 @@ conversation-log:
   max-total-size-mb: 256
   max-entry-bytes: 2097152
 
+# Preset prompt is inserted only into upstream chat-like requests when explicitly enabled.
+preset-prompt:
+  enabled: false
+  prompt: ""
+  max-bytes: 32768
+
 # How long (in seconds) Redis usage queue items are retained in memory for the RESP interface (LPOP/RPOP).
 # Default: 60. Max: 3600.
 redis-usage-queue-retention-seconds: 60
