@@ -117,6 +117,15 @@ References:
 
 Release asset の `management.html` は backend binaries と同じ tag から build されます。
 
+## Compatible Ecosystem
+
+PPAP は built-in usage analytics を維持しつつ、upstream-style Management API と usage queue integrations と互換性を保ちます。
+
+- [CPA-Manager](https://github.com/seakee/CPA-Manager): request-level monitoring、cost estimation、SQLite persistence、Codex account-pool operations。
+- [CLIProxyAPI Usage Dashboard](https://github.com/zhanglunet/cliproxyapi-usage-dashboard): usage queue を消費する local usage/quota dashboard。
+- [CLIProxy Pool Watch](https://github.com/murasame612/CLIProxyPoolWidget): CLIProxyAPI pool 向け macOS account quota monitor。
+- [Codex Switch](https://github.com/9ycrooked/CodexSwitch): OpenAI Codex auth files と quota checks 向け desktop account-profile switcher。
+
 ## SDK And Docs
 
 - SDK usage: [docs/sdk-usage.md](docs/sdk-usage.md)

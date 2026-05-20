@@ -116,6 +116,15 @@ References:
 
 The release asset `management.html` is built from the same tag as the backend binaries, so a running PPAP instance can point its panel updater at this repository.
 
+## Compatible Ecosystem
+
+PPAP keeps built-in usage analytics, but it also stays compatible with upstream-style Management API and usage queue integrations:
+
+- [CPA-Manager](https://github.com/seakee/CPA-Manager): request-level monitoring, cost estimation, SQLite persistence, and Codex account-pool operations.
+- [CLIProxyAPI Usage Dashboard](https://github.com/zhanglunet/cliproxyapi-usage-dashboard): local usage and quota dashboard that consumes the usage queue.
+- [CLIProxy Pool Watch](https://github.com/murasame612/CLIProxyPoolWidget): macOS account quota monitor for CLIProxyAPI pools.
+- [Codex Switch](https://github.com/9ycrooked/CodexSwitch): desktop account-profile switcher for OpenAI Codex auth files and quota checks.
+
 ## SDK And Docs
 
 - SDK usage: [docs/sdk-usage.md](docs/sdk-usage.md)

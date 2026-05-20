@@ -38,6 +38,9 @@ max-retry-credentials: 0
 max-retry-interval: 30
 disable-cooling: false
 
+# Require API key authentication for /v1/ws by default in Docker deployments.
+ws-auth: true
+
 upstream-concurrency:
   default: 0
   providers: {}

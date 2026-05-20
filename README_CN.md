@@ -117,6 +117,15 @@ PPAP 已把 `gpt-5.3-codex-spark` 加入本地 usage 成本估算。官方 previ
 
 Release 里的 `management.html` 与后端二进制来自同一个 tag，运行中的 PPAP 可以直接把面板更新地址指向本仓库。
 
+## 兼容生态
+
+PPAP 保留内置 usage 分析，同时继续兼容上游风格的 Management API 和 usage queue 集成：
+
+- [CPA-Manager](https://github.com/seakee/CPA-Manager)：请求级监控、费用估算、SQLite 持久化，以及 Codex 账号池运维。
+- [CLIProxyAPI Usage Dashboard](https://github.com/zhanglunet/cliproxyapi-usage-dashboard)：消费 usage queue 的本地用量和配额看板。
+- [CLIProxy Pool Watch](https://github.com/murasame612/CLIProxyPoolWidget)：面向 CLIProxyAPI 池的 macOS 账号额度监控工具。
+- [Codex Switch](https://github.com/9ycrooked/CodexSwitch)：用于 OpenAI Codex auth 文件和配额检查的桌面账号切换工具。
+
 ## SDK 和文档
 
 - SDK 使用：[docs/sdk-usage_CN.md](docs/sdk-usage_CN.md)

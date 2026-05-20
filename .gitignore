@@ -54,3 +54,6 @@ _bmad-output/*
 # macOS
 .DS_Store
 ._*
+
+# Go local cache
+.gocache/
