@@ -108,6 +108,34 @@ func TestBuildConfigChangeDetails_NoChanges(t *testing.T) {
 	}
 }
 
+func TestBuildConfigChangeDetails_ConversationLog(t *testing.T) {
+	oldCfg := &config.Config{
+		ConversationLog: config.ConversationLogConfig{
+			Enabled:        false,
+			Directory:      "old-logs",
+			MaxFileSizeMB:  16,
+			MaxTotalSizeMB: 256,
+			MaxEntryBytes:  1024,
+		},
+	}
+	newCfg := &config.Config{
+		ConversationLog: config.ConversationLogConfig{
+			Enabled:        true,
+			Directory:      "new-logs",
+			MaxFileSizeMB:  32,
+			MaxTotalSizeMB: 512,
+			MaxEntryBytes:  2048,
+		},
+	}
+
+	details := BuildConfigChangeDetails(oldCfg, newCfg)
+	expectContains(t, details, "conversation-log.enabled: false -> true")
+	expectContains(t, details, "conversation-log.directory: old-logs -> new-logs")
+	expectContains(t, details, "conversation-log.max-file-size-mb: 16 -> 32")
+	expectContains(t, details, "conversation-log.max-total-size-mb: 256 -> 512")
+	expectContains(t, details, "conversation-log.max-entry-bytes: 1024 -> 2048")
+}
+
 func TestBuildConfigChangeDetails_GeminiVertexHeadersAndForceMappings(t *testing.T) {
 	oldCfg := &config.Config{
 		GeminiKey: []config.GeminiKey{

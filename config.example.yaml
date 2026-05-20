@@ -73,6 +73,14 @@ usage-statistics-path: ""
 # How often usage statistics are flushed to disk. Defaults to 30 seconds when omitted or <= 0.
 usage-statistics-flush-interval-seconds: 30
 
+# Full conversation logs can store complete request and response bodies. Keep disabled unless needed.
+conversation-log:
+  enabled: false
+  directory: "conversation-logs"
+  max-file-size-mb: 16
+  max-total-size-mb: 256
+  max-entry-bytes: 2097152
+
 # How long (in seconds) Redis usage queue items are retained in memory for the RESP interface (LPOP/RPOP).
 # Default: 60. Max: 3600.
 redis-usage-queue-retention-seconds: 60

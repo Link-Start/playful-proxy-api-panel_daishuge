@@ -31,6 +31,13 @@ usage-statistics-path: "/CLIProxyAPI/data/usage-statistics.json"
 usage-statistics-flush-interval-seconds: 30
 redis-usage-queue-retention-seconds: 60
 
+conversation-log:
+  enabled: false
+  directory: "/CLIProxyAPI/data/conversation-logs"
+  max-file-size-mb: 16
+  max-total-size-mb: 256
+  max-entry-bytes: 2097152
+
 proxy-url: ""
 force-model-prefix: false
 request-retry: 3

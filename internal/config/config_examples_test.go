@@ -11,24 +11,27 @@ func TestRepositoryExampleConfigsParseAndPreservePPAPDefaults(t *testing.T) {
 	repoRoot := repositoryRoot(t)
 
 	tests := []struct {
-		name               string
-		file               string
-		wantWebsocketAuth  bool
-		wantPanelRepo      string
-		wantUsageStatsPath string
+		name                string
+		file                string
+		wantWebsocketAuth   bool
+		wantPanelRepo       string
+		wantUsageStatsPath  string
+		wantConversationDir string
 	}{
 		{
-			name:              "default example",
-			file:              "config.example.yaml",
-			wantWebsocketAuth: true,
-			wantPanelRepo:     DefaultPanelGitHubRepository,
+			name:                "default example",
+			file:                "config.example.yaml",
+			wantWebsocketAuth:   true,
+			wantPanelRepo:       DefaultPanelGitHubRepository,
+			wantConversationDir: DefaultConversationLogDir,
 		},
 		{
-			name:               "docker example",
-			file:               "config.docker.example.yaml",
-			wantWebsocketAuth:  true,
-			wantPanelRepo:      DefaultPanelGitHubRepository,
-			wantUsageStatsPath: "/CLIProxyAPI/data/usage-statistics.json",
+			name:                "docker example",
+			file:                "config.docker.example.yaml",
+			wantWebsocketAuth:   true,
+			wantPanelRepo:       DefaultPanelGitHubRepository,
+			wantUsageStatsPath:  "/CLIProxyAPI/data/usage-statistics.json",
+			wantConversationDir: "/CLIProxyAPI/data/conversation-logs",
 		},
 	}
 
@@ -47,6 +50,21 @@ func TestRepositoryExampleConfigsParseAndPreservePPAPDefaults(t *testing.T) {
 			}
 			if tt.wantUsageStatsPath != "" && cfg.UsageStatisticsPath != tt.wantUsageStatsPath {
 				t.Fatalf("usage statistics path = %q, want %q", cfg.UsageStatisticsPath, tt.wantUsageStatsPath)
+			}
+			if cfg.ConversationLog.Enabled {
+				t.Fatal("conversation-log.enabled = true, want false in example configs")
+			}
+			if cfg.ConversationLog.Directory != tt.wantConversationDir {
+				t.Fatalf("conversation-log.directory = %q, want %q", cfg.ConversationLog.Directory, tt.wantConversationDir)
+			}
+			if cfg.ConversationLog.MaxFileSizeMB != DefaultConversationLogFileMB {
+				t.Fatalf("conversation-log.max-file-size-mb = %d, want %d", cfg.ConversationLog.MaxFileSizeMB, DefaultConversationLogFileMB)
+			}
+			if cfg.ConversationLog.MaxTotalSizeMB != DefaultConversationLogTotalMB {
+				t.Fatalf("conversation-log.max-total-size-mb = %d, want %d", cfg.ConversationLog.MaxTotalSizeMB, DefaultConversationLogTotalMB)
+			}
+			if cfg.ConversationLog.MaxEntryBytes != DefaultConversationLogEntryBytes {
+				t.Fatalf("conversation-log.max-entry-bytes = %d, want %d", cfg.ConversationLog.MaxEntryBytes, DefaultConversationLogEntryBytes)
 			}
 		})
 	}

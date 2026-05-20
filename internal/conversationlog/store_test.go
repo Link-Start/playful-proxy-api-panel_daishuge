@@ -1,0 +1,296 @@
+package conversationlog
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+
+	appconfig "github.com/router-for-me/CLIProxyAPI/v6/internal/config"
+)
+
+func TestStoreDisabledDoesNotCreateFiles(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "conversation-logs")
+	store := NewStore(Options{
+		Enabled:           false,
+		Directory:         dir,
+		MaxFileSizeBytes:  1024,
+		MaxTotalSizeBytes: 4096,
+		MaxEntryBytes:     1024,
+	})
+
+	location, err := store.Write(Entry{
+		RequestID: "req-disabled",
+		Request: Payload{
+			Body: json.RawMessage(`{"messages":[{"role":"user","content":"private prompt"}]}`),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if location.ID != "" || location.File != "" || location.Size != 0 {
+		t.Fatalf("disabled Write() location = %+v, want zero value", location)
+	}
+	if _, errStat := os.Stat(dir); !os.IsNotExist(errStat) {
+		t.Fatalf("disabled store created directory or returned unexpected error: %v", errStat)
+	}
+
+	list, err := store.List(ListQuery{})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(list.Entries) != 0 {
+		t.Fatalf("disabled List() returned %d entries, want 0", len(list.Entries))
+	}
+}
+
+func TestOptionsFromConfigResolvesRelativeDirectory(t *testing.T) {
+	configDir := t.TempDir()
+	cfg := &appconfig.Config{
+		ConversationLog: appconfig.ConversationLogConfig{
+			Enabled:        true,
+			Directory:      " audit ",
+			MaxFileSizeMB:  2,
+			MaxTotalSizeMB: 8,
+			MaxEntryBytes:  4096,
+		},
+	}
+
+	opts := OptionsFromConfig(cfg, filepath.Join(configDir, "config.yaml"))
+
+	if !opts.Enabled {
+		t.Fatal("Enabled = false, want true")
+	}
+	wantDir := filepath.Join(configDir, "audit")
+	if opts.Directory != wantDir {
+		t.Fatalf("Directory = %q, want %q", opts.Directory, wantDir)
+	}
+	if opts.MaxFileSizeBytes != 2*1024*1024 {
+		t.Fatalf("MaxFileSizeBytes = %d, want %d", opts.MaxFileSizeBytes, 2*1024*1024)
+	}
+	if opts.MaxTotalSizeBytes != 8*1024*1024 {
+		t.Fatalf("MaxTotalSizeBytes = %d, want %d", opts.MaxTotalSizeBytes, 8*1024*1024)
+	}
+	if opts.MaxEntryBytes != 4096 {
+		t.Fatalf("MaxEntryBytes = %d, want 4096", opts.MaxEntryBytes)
+	}
+}
+
+func TestStoreWriteReadListAndRedact(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "conversation-logs")
+	now := time.Date(2026, 5, 20, 10, 30, 0, 0, time.UTC)
+	store := NewStore(Options{
+		Enabled:           true,
+		Directory:         dir,
+		MaxFileSizeBytes:  1024 * 1024,
+		MaxTotalSizeBytes: 4 * 1024 * 1024,
+		MaxEntryBytes:     1024 * 1024,
+	})
+	store.SetNowForTest(func() time.Time { return now })
+
+	location, err := store.Write(Entry{
+		RequestID:   "req-1",
+		Method:      "POST",
+		Path:        "/v1/chat/completions",
+		Provider:    "codex",
+		Model:       "gpt-5.5",
+		UpstreamURL: "https://upstream.example/v1/chat/completions?api_key=secret&trace=keep",
+		StatusCode:  200,
+		RequestHeaders: map[string][]string{
+			"Authorization": []string{"Bearer secret"},
+			"X-Trace":       []string{"visible"},
+		},
+		ResponseHeaders: map[string][]string{
+			"Set-Cookie":   []string{"sid=secret"},
+			"Content-Type": []string{"application/json"},
+		},
+		Request: Payload{
+			Body: json.RawMessage(`{"messages":[{"role":"user","content":"hello"}]}`),
+		},
+		Response: Payload{
+			Text: "world",
+		},
+		Usage:    json.RawMessage(`{"total_tokens":12}`),
+		Metadata: map[string]string{"api_key": "secret", "route": "visible"},
+	})
+	if err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if location.ID == "" || location.File == "" || location.Size == 0 {
+		t.Fatalf("Write() location = %+v, want populated fields", location)
+	}
+
+	if runtime.GOOS != "windows" {
+		assertPerm(t, dir, 0o700)
+		assertPerm(t, location.File, 0o600)
+	}
+
+	got, err := store.Read(location.ID)
+	if err != nil {
+		t.Fatalf("Read() error = %v", err)
+	}
+	if got.RequestID != "req-1" || got.Method != "POST" || got.Model != "gpt-5.5" {
+		t.Fatalf("Read() = %+v, want request metadata", got)
+	}
+	if got.CreatedAt != now {
+		t.Fatalf("CreatedAt = %s, want %s", got.CreatedAt, now)
+	}
+	if got.RequestHeaders["Authorization"][0] != "[REDACTED]" {
+		t.Fatalf("Authorization header was not redacted: %+v", got.RequestHeaders)
+	}
+	if got.RequestHeaders["X-Trace"][0] != "visible" {
+		t.Fatalf("non-sensitive header was not preserved: %+v", got.RequestHeaders)
+	}
+	if got.ResponseHeaders["Set-Cookie"][0] != "[REDACTED]" {
+		t.Fatalf("Set-Cookie header was not redacted: %+v", got.ResponseHeaders)
+	}
+	if strings.Contains(got.UpstreamURL, "secret") || !strings.Contains(got.UpstreamURL, "trace=keep") {
+		t.Fatalf("UpstreamURL redaction mismatch: %q", got.UpstreamURL)
+	}
+	if got.Metadata["api_key"] != "[REDACTED]" || got.Metadata["route"] != "visible" {
+		t.Fatalf("metadata redaction mismatch: %+v", got.Metadata)
+	}
+
+	list, err := store.List(ListQuery{Limit: 1})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(list.Entries) != 1 {
+		t.Fatalf("List() returned %d entries, want 1", len(list.Entries))
+	}
+	if list.Entries[0].ID != location.ID || list.Entries[0].RequestID != "req-1" {
+		t.Fatalf("List() summary = %+v, want written entry", list.Entries[0])
+	}
+}
+
+func TestStoreListSkipsMalformedLines(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conversation-20260520T103000.000000000Z-aaaaaaaaaaaaaaaa.jsonl")
+	good := Entry{ID: "good", RequestID: "req-good", CreatedAt: time.Date(2026, 5, 20, 10, 30, 0, 0, time.UTC)}
+	goodLine, err := json.Marshal(good)
+	if err != nil {
+		t.Fatalf("marshal good entry: %v", err)
+	}
+	content := append([]byte("not-json\n"), append(goodLine, '\n')...)
+	if errWrite := os.WriteFile(path, content, 0o600); errWrite != nil {
+		t.Fatalf("write malformed fixture: %v", errWrite)
+	}
+
+	store := NewStore(Options{
+		Enabled:           true,
+		Directory:         dir,
+		MaxFileSizeBytes:  1024,
+		MaxTotalSizeBytes: 4096,
+		MaxEntryBytes:     1024,
+	})
+
+	list, err := store.List(ListQuery{})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if list.Malformed != 1 {
+		t.Fatalf("Malformed = %d, want 1", list.Malformed)
+	}
+	if len(list.Entries) != 1 || list.Entries[0].ID != "good" {
+		t.Fatalf("Entries = %+v, want only good entry", list.Entries)
+	}
+
+	entry, err := store.Read("good")
+	if err != nil {
+		t.Fatalf("Read(good) error = %v", err)
+	}
+	if entry.RequestID != "req-good" {
+		t.Fatalf("Read(good) = %+v, want good entry", entry)
+	}
+}
+
+func TestStoreRotationAndRetention(t *testing.T) {
+	dir := t.TempDir()
+	current := time.Date(2026, 5, 20, 10, 30, 0, 0, time.UTC)
+	store := NewStore(Options{
+		Enabled:           true,
+		Directory:         dir,
+		MaxFileSizeBytes:  520,
+		MaxTotalSizeBytes: 900,
+		MaxEntryBytes:     4096,
+	})
+	store.SetNowForTest(func() time.Time {
+		current = current.Add(time.Second)
+		return current
+	})
+
+	var latestID string
+	for i := 0; i < 5; i++ {
+		location, err := store.Write(Entry{
+			ID:        "entry-" + string(rune('a'+i)),
+			RequestID: "req-retention",
+			CreatedAt: current,
+			Method:    "POST",
+			Path:      "/v1/chat/completions",
+			Request:   Payload{Text: strings.Repeat("request", 20)},
+			Response:  Payload{Text: strings.Repeat("response", 20)},
+		})
+		if err != nil {
+			t.Fatalf("Write(%d) error = %v", i, err)
+		}
+		latestID = location.ID
+	}
+
+	files, err := listConversationFiles(dir, false)
+	if err != nil {
+		t.Fatalf("listConversationFiles() error = %v", err)
+	}
+	if len(files) >= 5 {
+		t.Fatalf("retention kept %d files, want fewer than all written files", len(files))
+	}
+	total := int64(0)
+	for _, path := range files {
+		info, errInfo := os.Stat(path)
+		if errInfo != nil {
+			t.Fatalf("stat retained file: %v", errInfo)
+		}
+		total += info.Size()
+	}
+	if total > 900 {
+		t.Fatalf("retained size = %d, want <= 900", total)
+	}
+	if _, errRead := store.Read(latestID); errRead != nil {
+		t.Fatalf("latest retained entry was not readable: %v", errRead)
+	}
+	if _, errRead := store.Read("entry-a"); !errors.Is(errRead, ErrNotFound) {
+		t.Fatalf("oldest entry error = %v, want ErrNotFound after retention", errRead)
+	}
+}
+
+func TestStoreRejectsOversizedEntries(t *testing.T) {
+	store := NewStore(Options{
+		Enabled:           true,
+		Directory:         t.TempDir(),
+		MaxFileSizeBytes:  1024,
+		MaxTotalSizeBytes: 4096,
+		MaxEntryBytes:     128,
+	})
+
+	_, err := store.Write(Entry{
+		RequestID: "req-large",
+		Request:   Payload{Text: strings.Repeat("x", 512)},
+	})
+	if !errors.Is(err, ErrEntryTooLarge) {
+		t.Fatalf("Write() error = %v, want ErrEntryTooLarge", err)
+	}
+}
+
+func assertPerm(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("%s mode = %v, want %v", path, got, want)
+	}
+}

@@ -39,6 +39,21 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	if oldCfg.UsageStatisticsEnabled != newCfg.UsageStatisticsEnabled {
 		changes = append(changes, fmt.Sprintf("usage-statistics-enabled: %t -> %t", oldCfg.UsageStatisticsEnabled, newCfg.UsageStatisticsEnabled))
 	}
+	if oldCfg.ConversationLog.Enabled != newCfg.ConversationLog.Enabled {
+		changes = append(changes, fmt.Sprintf("conversation-log.enabled: %t -> %t", oldCfg.ConversationLog.Enabled, newCfg.ConversationLog.Enabled))
+	}
+	if strings.TrimSpace(oldCfg.ConversationLog.Directory) != strings.TrimSpace(newCfg.ConversationLog.Directory) {
+		changes = append(changes, fmt.Sprintf("conversation-log.directory: %s -> %s", strings.TrimSpace(oldCfg.ConversationLog.Directory), strings.TrimSpace(newCfg.ConversationLog.Directory)))
+	}
+	if oldCfg.ConversationLog.MaxFileSizeMB != newCfg.ConversationLog.MaxFileSizeMB {
+		changes = append(changes, fmt.Sprintf("conversation-log.max-file-size-mb: %d -> %d", oldCfg.ConversationLog.MaxFileSizeMB, newCfg.ConversationLog.MaxFileSizeMB))
+	}
+	if oldCfg.ConversationLog.MaxTotalSizeMB != newCfg.ConversationLog.MaxTotalSizeMB {
+		changes = append(changes, fmt.Sprintf("conversation-log.max-total-size-mb: %d -> %d", oldCfg.ConversationLog.MaxTotalSizeMB, newCfg.ConversationLog.MaxTotalSizeMB))
+	}
+	if oldCfg.ConversationLog.MaxEntryBytes != newCfg.ConversationLog.MaxEntryBytes {
+		changes = append(changes, fmt.Sprintf("conversation-log.max-entry-bytes: %d -> %d", oldCfg.ConversationLog.MaxEntryBytes, newCfg.ConversationLog.MaxEntryBytes))
+	}
 	if oldCfg.RedisUsageQueueRetentionSeconds != newCfg.RedisUsageQueueRetentionSeconds {
 		changes = append(changes, fmt.Sprintf("redis-usage-queue-retention-seconds: %d -> %d", oldCfg.RedisUsageQueueRetentionSeconds, newCfg.RedisUsageQueueRetentionSeconds))
 	}

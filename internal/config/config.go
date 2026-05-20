@@ -21,8 +21,12 @@ import (
 )
 
 const (
-	DefaultPanelGitHubRepository = "https://github.com/daishuge/playful-proxy-api-panel"
-	DefaultPprofAddr             = "127.0.0.1:8316"
+	DefaultPanelGitHubRepository     = "https://github.com/daishuge/playful-proxy-api-panel"
+	DefaultPprofAddr                 = "127.0.0.1:8316"
+	DefaultConversationLogDir        = "conversation-logs"
+	DefaultConversationLogFileMB     = 16
+	DefaultConversationLogTotalMB    = 256
+	DefaultConversationLogEntryBytes = 2 * 1024 * 1024
 )
 
 // Config represents the application's configuration, loaded from a YAML file.
@@ -71,6 +75,9 @@ type Config struct {
 
 	// UsageStatisticsFlushIntervalSeconds controls how often the usage snapshot is written. Default is 30 seconds.
 	UsageStatisticsFlushIntervalSeconds int `yaml:"usage-statistics-flush-interval-seconds,omitempty" json:"usage-statistics-flush-interval-seconds,omitempty"`
+
+	// ConversationLog controls opt-in full conversation logging storage.
+	ConversationLog ConversationLogConfig `yaml:"conversation-log" json:"conversation-log"`
 
 	// RedisUsageQueueRetentionSeconds controls how long (in seconds) usage queue items
 	// are retained in memory for the Redis RESP interface (LPOP/RPOP).
@@ -195,6 +202,53 @@ type PprofConfig struct {
 	Enable bool `yaml:"enable" json:"enable"`
 	// Addr is the host:port address for the pprof HTTP server.
 	Addr string `yaml:"addr" json:"addr"`
+}
+
+// ConversationLogConfig controls full request/response conversation log storage.
+// It is disabled by default because entries can contain sensitive user and model content.
+type ConversationLogConfig struct {
+	// Enabled toggles writing full conversation entries.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Directory stores JSONL conversation log shards. Relative paths resolve next to config.yaml.
+	Directory string `yaml:"directory,omitempty" json:"directory,omitempty"`
+	// MaxFileSizeMB rotates JSONL shards after this size. Values <= 0 use the default.
+	MaxFileSizeMB int `yaml:"max-file-size-mb,omitempty" json:"max-file-size-mb,omitempty"`
+	// MaxTotalSizeMB bounds total conversation log storage. Values <= 0 use the default.
+	MaxTotalSizeMB int `yaml:"max-total-size-mb,omitempty" json:"max-total-size-mb,omitempty"`
+	// MaxEntryBytes rejects oversized single entries before they reach storage. Values <= 0 use the default.
+	MaxEntryBytes int `yaml:"max-entry-bytes,omitempty" json:"max-entry-bytes,omitempty"`
+}
+
+// DefaultConversationLogConfig returns the safe default full conversation log settings.
+func DefaultConversationLogConfig() ConversationLogConfig {
+	return ConversationLogConfig{
+		Enabled:        false,
+		Directory:      DefaultConversationLogDir,
+		MaxFileSizeMB:  DefaultConversationLogFileMB,
+		MaxTotalSizeMB: DefaultConversationLogTotalMB,
+		MaxEntryBytes:  DefaultConversationLogEntryBytes,
+	}
+}
+
+// Normalize applies safe defaults and clamps invalid full conversation log settings.
+func (c *ConversationLogConfig) Normalize() {
+	if c == nil {
+		return
+	}
+	defaults := DefaultConversationLogConfig()
+	c.Directory = strings.TrimSpace(c.Directory)
+	if c.Directory == "" {
+		c.Directory = defaults.Directory
+	}
+	if c.MaxFileSizeMB <= 0 {
+		c.MaxFileSizeMB = defaults.MaxFileSizeMB
+	}
+	if c.MaxTotalSizeMB <= 0 {
+		c.MaxTotalSizeMB = defaults.MaxTotalSizeMB
+	}
+	if c.MaxEntryBytes <= 0 {
+		c.MaxEntryBytes = defaults.MaxEntryBytes
+	}
 }
 
 // RemoteManagement holds management API configuration under 'remote-management'.
@@ -710,6 +764,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	cfg.LogsMaxTotalSizeMB = 0
 	cfg.ErrorLogsMaxFiles = 0
 	cfg.UsageStatisticsEnabled = false
+	cfg.ConversationLog = DefaultConversationLogConfig()
 	cfg.RedisUsageQueueRetentionSeconds = 60
 	cfg.DisableCooling = false
 	cfg.DisableImageGeneration = DisableImageGenerationOff
@@ -772,6 +827,8 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	if cfg.ErrorLogsMaxFiles < 0 {
 		cfg.ErrorLogsMaxFiles = 0
 	}
+
+	cfg.ConversationLog.Normalize()
 
 	if cfg.RedisUsageQueueRetentionSeconds <= 0 {
 		cfg.RedisUsageQueueRetentionSeconds = 60
@@ -1451,6 +1508,8 @@ func isKnownDefaultValue(path []string, node *yaml.Node) bool {
 	// Check string defaults
 	if node.Kind == yaml.ScalarNode && node.Tag == "!!str" {
 		switch fullPath {
+		case "conversation-log.directory":
+			return node.Value == DefaultConversationLogDir
 		case "pprof.addr":
 			return node.Value == DefaultPprofAddr
 		case "remote-management.panel-github-repository":
@@ -1463,6 +1522,12 @@ func isKnownDefaultValue(path []string, node *yaml.Node) bool {
 	// Check integer defaults
 	if node.Kind == yaml.ScalarNode && node.Tag == "!!int" {
 		switch fullPath {
+		case "conversation-log.max-file-size-mb":
+			return node.Value == fmt.Sprintf("%d", DefaultConversationLogFileMB)
+		case "conversation-log.max-total-size-mb":
+			return node.Value == fmt.Sprintf("%d", DefaultConversationLogTotalMB)
+		case "conversation-log.max-entry-bytes":
+			return node.Value == fmt.Sprintf("%d", DefaultConversationLogEntryBytes)
 		case "error-logs-max-files":
 			return node.Value == "10"
 		}
