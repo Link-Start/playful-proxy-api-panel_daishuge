@@ -107,6 +107,19 @@ func NewStore(opts Options) *Store {
 	}
 }
 
+// Enabled reports whether this store will persist entries.
+func (s *Store) Enabled() bool {
+	return s != nil && s.opts.Enabled
+}
+
+// MaxEntryBytes returns the normalized per-entry byte budget.
+func (s *Store) MaxEntryBytes() int64 {
+	if s == nil {
+		return int64(appconfig.DefaultConversationLogEntryBytes)
+	}
+	return s.opts.MaxEntryBytes
+}
+
 // SetNowForTest overrides the clock used by Store. It is intended for tests.
 func (s *Store) SetNowForTest(now func() time.Time) {
 	s.mu.Lock()
@@ -620,6 +633,57 @@ func RedactURL(raw string) string {
 	}
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
+}
+
+// RedactJSON returns a copy of raw JSON with sensitive object keys replaced.
+func RedactJSON(raw json.RawMessage) json.RawMessage {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || !json.Valid([]byte(trimmed)) {
+		return cloneRawMessage(raw)
+	}
+	decoder := json.NewDecoder(strings.NewReader(trimmed))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return cloneRawMessage(raw)
+	}
+	redacted, err := json.Marshal(redactJSONValue(value))
+	if err != nil {
+		return cloneRawMessage(raw)
+	}
+	return json.RawMessage(redacted)
+}
+
+func redactJSONValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, child := range typed {
+			if isSensitiveKey(key) {
+				out[key] = "[REDACTED]"
+				continue
+			}
+			out[key] = redactJSONValue(child)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for i, child := range typed {
+			out[i] = redactJSONValue(child)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+func cloneRawMessage(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(json.RawMessage, len(raw))
+	copy(out, raw)
+	return out
 }
 
 func isSensitiveKey(key string) bool {
