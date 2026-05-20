@@ -231,6 +231,54 @@ func TestConversationLogStreamingCapturesChunksUsageAndHeaders(t *testing.T) {
 	}
 }
 
+func TestConversationLogStreamingTruncatesLargeChunksWithoutTruncatingClient(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := conversationlog.NewStore(conversationlog.Options{
+		Enabled:           true,
+		Directory:         filepath.Join(t.TempDir(), "conversation"),
+		MaxFileSizeBytes:  64 * 1024,
+		MaxTotalSizeBytes: 128 * 1024,
+		MaxEntryBytes:     4096,
+	})
+	largeChunk := strings.Repeat("x", int(conversationBodyBudget(store))*2)
+	executor := &conversationLogTestExecutor{
+		provider:      "conversation-log-stream-truncate",
+		streamHeaders: http.Header{"X-Upstream": {"stream-large"}},
+		streamChunks: []coreexecutor.StreamChunk{
+			{Payload: []byte(largeChunk)},
+		},
+	}
+	handler, model := newConversationLogTestHandler(t, store, executor)
+	body := []byte(fmt.Sprintf(`{"model":%q,"stream":true,"messages":[{"role":"user","content":"hello"}]}`, model))
+	ctx := newConversationLogRequestContext(t, handler, http.MethodPost, "/v1/chat/completions", body, "req-stream-large")
+
+	data, _, errs := handler.ExecuteStreamWithAuthManager(ctx, "openai", model, body, "")
+	var clientPayload bytes.Buffer
+	for chunk := range data {
+		clientPayload.Write(chunk)
+	}
+	for errMsg := range errs {
+		if errMsg != nil {
+			t.Fatalf("unexpected stream error: %+v", errMsg)
+		}
+	}
+	if clientPayload.String() != largeChunk {
+		t.Fatalf("client payload was truncated: got %d bytes, want %d", clientPayload.Len(), len(largeChunk))
+	}
+
+	entry := readSingleConversationEntry(t, store)
+	if entry.Response.Bytes != int64(len(largeChunk)) {
+		t.Fatalf("logged response bytes = %d, want %d", entry.Response.Bytes, len(largeChunk))
+	}
+	if !entry.Response.Truncated {
+		t.Fatalf("expected logged response to be marked truncated")
+	}
+	captured := strings.Join(entry.Response.Chunks, "")
+	if len(captured) != int(conversationBodyBudget(store)) {
+		t.Fatalf("captured log chunk bytes = %d, want %d", len(captured), conversationBodyBudget(store))
+	}
+}
+
 func TestConversationLogNonStreamingCapturesErrorStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	store := conversationlog.NewStore(conversationlog.Options{

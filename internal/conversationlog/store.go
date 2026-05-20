@@ -3,11 +3,13 @@ package conversationlog
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -490,64 +492,96 @@ func isConversationFileName(name string) bool {
 }
 
 func readSummaries(path string, maxEntryBytes int64) ([]EntrySummary, int, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer func() {
-		_ = file.Close()
-	}()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), scannerMaxBuffer(maxEntryBytes))
 	summaries := []EntrySummary{}
-	malformed := 0
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(strings.TrimSpace(string(line))) == 0 {
-			continue
-		}
+	malformedJSON := 0
+	malformedOversized, err := readLogLines(path, maxEntryBytes, func(line []byte) error {
 		var entry Entry
 		if errJSON := json.Unmarshal(line, &entry); errJSON != nil {
-			malformed++
-			continue
+			malformedJSON++
+			return nil
 		}
 		summaries = append(summaries, summarizeEntry(entry, filepath.Base(path), int64(len(line))))
+		return nil
+	})
+	if err != nil {
+		return summaries, malformedJSON + malformedOversized, err
 	}
-	if errScan := scanner.Err(); errScan != nil {
-		return summaries, malformed, errScan
-	}
-	return summaries, malformed, nil
+	return summaries, malformedJSON + malformedOversized, nil
 }
 
 func readEntry(path string, id string, maxEntryBytes int64) (Entry, bool, error) {
-	file, err := os.Open(path)
+	var found Entry
+	foundEntry := false
+	errStop := errors.New("stop reading conversation log")
+	_, err := readLogLines(path, maxEntryBytes, func(line []byte) error {
+		var entry Entry
+		if errJSON := json.Unmarshal(line, &entry); errJSON != nil {
+			return nil
+		}
+		if entry.ID == id {
+			found = entry
+			foundEntry = true
+			return errStop
+		}
+		return nil
+	})
+	if errors.Is(err, errStop) {
+		return found, true, nil
+	}
 	if err != nil {
 		return Entry{}, false, err
+	}
+	return found, foundEntry, nil
+}
+
+func readLogLines(path string, maxEntryBytes int64, visit func([]byte) error) (int, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
 	}
 	defer func() {
 		_ = file.Close()
 	}()
 
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), scannerMaxBuffer(maxEntryBytes))
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(strings.TrimSpace(string(line))) == 0 {
+	reader := bufio.NewReaderSize(file, 64*1024)
+	maxLineBytes := scannerMaxBuffer(maxEntryBytes)
+	line := make([]byte, 0, 64*1024)
+	malformed := 0
+	oversized := false
+	for {
+		part, errRead := reader.ReadSlice('\n')
+		if len(part) > 0 && !oversized {
+			if len(line)+len(part) > maxLineBytes {
+				oversized = true
+				line = line[:0]
+			} else {
+				line = append(line, part...)
+			}
+		}
+		if errors.Is(errRead, bufio.ErrBufferFull) {
 			continue
 		}
-		var entry Entry
-		if errJSON := json.Unmarshal(line, &entry); errJSON != nil {
-			continue
+		if errRead != nil && !errors.Is(errRead, io.EOF) {
+			return malformed, errRead
 		}
-		if entry.ID == id {
-			return entry, true, nil
+		if oversized {
+			malformed++
+			oversized = false
+			line = line[:0]
+		} else {
+			line = bytes.TrimRight(line, "\r\n")
+			if len(strings.TrimSpace(string(line))) > 0 {
+				if errVisit := visit(line); errVisit != nil {
+					return malformed, errVisit
+				}
+			}
+			line = line[:0]
+		}
+		if errors.Is(errRead, io.EOF) {
+			break
 		}
 	}
-	if errScan := scanner.Err(); errScan != nil {
-		return Entry{}, false, errScan
-	}
-	return Entry{}, false, nil
+	return malformed, nil
 }
 
 func scannerMaxBuffer(maxEntryBytes int64) int {

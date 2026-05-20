@@ -3,10 +3,12 @@ package conversationlog
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -208,6 +210,219 @@ func TestStoreListSkipsMalformedLines(t *testing.T) {
 	}
 }
 
+func TestStoreListSkipsOversizedMalformedLines(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conversation-20260520T103000.000000000Z-bbbbbbbbbbbbbbbb.jsonl")
+	good := Entry{ID: "good", RequestID: "req-good", CreatedAt: time.Date(2026, 5, 20, 10, 30, 0, 0, time.UTC)}
+	goodLine, err := json.Marshal(good)
+	if err != nil {
+		t.Fatalf("marshal good entry: %v", err)
+	}
+	content := []byte(strings.Repeat("x", 128*1024) + "\n" + string(goodLine) + "\n")
+	if errWrite := os.WriteFile(path, content, 0o600); errWrite != nil {
+		t.Fatalf("write oversized malformed fixture: %v", errWrite)
+	}
+
+	store := NewStore(Options{
+		Enabled:           true,
+		Directory:         dir,
+		MaxFileSizeBytes:  256 * 1024,
+		MaxTotalSizeBytes: 512 * 1024,
+		MaxEntryBytes:     128,
+	})
+
+	list, err := store.List(ListQuery{})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if list.Malformed != 1 {
+		t.Fatalf("Malformed = %d, want 1", list.Malformed)
+	}
+	if len(list.Entries) != 1 || list.Entries[0].ID != "good" {
+		t.Fatalf("Entries = %+v, want only good entry", list.Entries)
+	}
+	entry, err := store.Read("good")
+	if err != nil {
+		t.Fatalf("Read(good) error = %v", err)
+	}
+	if entry.RequestID != "req-good" {
+		t.Fatalf("Read(good) = %+v, want good entry", entry)
+	}
+}
+
+func TestStoreListPaginationAcrossShards(t *testing.T) {
+	dir := t.TempDir()
+	current := time.Date(2026, 5, 20, 10, 30, 0, 0, time.UTC)
+	store := NewStore(Options{
+		Enabled:           true,
+		Directory:         dir,
+		MaxFileSizeBytes:  700,
+		MaxTotalSizeBytes: 16 * 1024,
+		MaxEntryBytes:     4096,
+	})
+	store.SetNowForTest(func() time.Time {
+		current = current.Add(time.Second)
+		return current
+	})
+
+	for i := 0; i < 5; i++ {
+		_, err := store.Write(Entry{
+			ID:        fmt.Sprintf("entry-%d", i),
+			RequestID: fmt.Sprintf("req-%d", i),
+			Method:    "POST",
+			Path:      "/v1/chat/completions",
+			Request:   Payload{Text: strings.Repeat(fmt.Sprintf("request-%d", i), 20)},
+			Response:  Payload{Text: strings.Repeat(fmt.Sprintf("response-%d", i), 20)},
+		})
+		if err != nil {
+			t.Fatalf("Write(%d) error = %v", i, err)
+		}
+	}
+
+	files, err := listConversationFiles(dir, false)
+	if err != nil {
+		t.Fatalf("listConversationFiles() error = %v", err)
+	}
+	if len(files) < 2 {
+		t.Fatalf("expected writes to span multiple shards, got %d file(s)", len(files))
+	}
+
+	first, err := store.List(ListQuery{Limit: 2})
+	if err != nil {
+		t.Fatalf("List(first) error = %v", err)
+	}
+	assertSummaryIDs(t, first.Entries, []string{"entry-4", "entry-3"})
+	if first.NextCursor == "" {
+		t.Fatalf("first page NextCursor is empty")
+	}
+
+	second, err := store.List(ListQuery{Limit: 2, Cursor: first.NextCursor})
+	if err != nil {
+		t.Fatalf("List(second) error = %v", err)
+	}
+	assertSummaryIDs(t, second.Entries, []string{"entry-2", "entry-1"})
+	if second.NextCursor == "" {
+		t.Fatalf("second page NextCursor is empty")
+	}
+
+	third, err := store.List(ListQuery{Limit: 2, Cursor: second.NextCursor})
+	if err != nil {
+		t.Fatalf("List(third) error = %v", err)
+	}
+	assertSummaryIDs(t, third.Entries, []string{"entry-0"})
+	if third.NextCursor != "" {
+		t.Fatalf("third page NextCursor = %q, want empty", third.NextCursor)
+	}
+
+	if _, err := store.List(ListQuery{Cursor: "not-a-cursor"}); err == nil {
+		t.Fatalf("List() with invalid cursor returned nil error")
+	}
+}
+
+func TestStoreConcurrentWritesProduceReadableUniqueEntries(t *testing.T) {
+	store := NewStore(Options{
+		Enabled:           true,
+		Directory:         t.TempDir(),
+		MaxFileSizeBytes:  1024 * 1024,
+		MaxTotalSizeBytes: 2 * 1024 * 1024,
+		MaxEntryBytes:     4096,
+	})
+
+	const count = 32
+	var wg sync.WaitGroup
+	errCh := make(chan error, count)
+	for i := 0; i < count; i++ {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := store.Write(Entry{
+				ID:         fmt.Sprintf("concurrent-%02d", i),
+				RequestID:  fmt.Sprintf("req-concurrent-%02d", i),
+				Method:     "POST",
+				Path:       "/v1/chat/completions",
+				StatusCode: 200,
+				Request:    Payload{Text: fmt.Sprintf("request-%02d", i)},
+				Response:   Payload{Text: fmt.Sprintf("response-%02d", i)},
+			})
+			if err != nil {
+				errCh <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("concurrent Write() error = %v", err)
+	}
+
+	list, err := store.List(ListQuery{Limit: count})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(list.Entries) != count {
+		t.Fatalf("List() returned %d entries, want %d", len(list.Entries), count)
+	}
+	seen := map[string]bool{}
+	for _, summary := range list.Entries {
+		if seen[summary.ID] {
+			t.Fatalf("duplicate summary id %q in %+v", summary.ID, list.Entries)
+		}
+		seen[summary.ID] = true
+		entry, err := store.Read(summary.ID)
+		if err != nil {
+			t.Fatalf("Read(%s) error = %v", summary.ID, err)
+		}
+		if entry.ID != summary.ID {
+			t.Fatalf("Read(%s) returned %q", summary.ID, entry.ID)
+		}
+	}
+}
+
+func TestStoreReadRejectsTraversalAndIgnoresNonConversationFiles(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(Options{
+		Enabled:           true,
+		Directory:         dir,
+		MaxFileSizeBytes:  1024 * 1024,
+		MaxTotalSizeBytes: 1024 * 1024,
+		MaxEntryBytes:     4096,
+	})
+	if _, err := store.Write(Entry{ID: "safe-entry", RequestID: "req-safe"}); err != nil {
+		t.Fatalf("Write(safe-entry) error = %v", err)
+	}
+	ignoredLine, err := json.Marshal(Entry{ID: "ignored-entry", CreatedAt: time.Date(2026, 5, 20, 10, 31, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatalf("marshal ignored entry: %v", err)
+	}
+	ignoredFiles := []string{
+		"not-conversation.jsonl",
+		"conversation-20260520T103000.000000000Z-ignored.jsonl.bak",
+	}
+	for _, name := range ignoredFiles {
+		if errWrite := os.WriteFile(filepath.Join(dir, name), append(ignoredLine, '\n'), 0o600); errWrite != nil {
+			t.Fatalf("write ignored fixture %s: %v", name, errWrite)
+		}
+	}
+	if errMkdir := os.Mkdir(filepath.Join(dir, "conversation-20260520T103000.000000000Z-directory.jsonl"), 0o700); errMkdir != nil {
+		t.Fatalf("create ignored directory fixture: %v", errMkdir)
+	}
+
+	for _, id := range []string{"", "../safe-entry", `..\safe-entry`, "nested/safe-entry", `nested\safe-entry`} {
+		if _, errRead := store.Read(id); !errors.Is(errRead, ErrNotFound) {
+			t.Fatalf("Read(%q) error = %v, want ErrNotFound", id, errRead)
+		}
+	}
+	list, err := store.List(ListQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	assertSummaryIDs(t, list.Entries, []string{"safe-entry"})
+	if _, errRead := store.Read("ignored-entry"); !errors.Is(errRead, ErrNotFound) {
+		t.Fatalf("Read(ignored-entry) error = %v, want ErrNotFound", errRead)
+	}
+}
+
 func TestStoreRotationAndRetention(t *testing.T) {
 	dir := t.TempDir()
 	current := time.Date(2026, 5, 20, 10, 30, 0, 0, time.UTC)
@@ -281,6 +496,35 @@ func TestStoreRejectsOversizedEntries(t *testing.T) {
 	})
 	if !errors.Is(err, ErrEntryTooLarge) {
 		t.Fatalf("Write() error = %v, want ErrEntryTooLarge", err)
+	}
+}
+
+func TestRedactJSONRedactsNestedSensitiveKeys(t *testing.T) {
+	raw := json.RawMessage(`{"messages":[{"role":"user","content":"visible","metadata":{"api_key":"request-secret"}}],"tools":[{"credential":"tool-secret"}],"count":2}`)
+
+	redacted := RedactJSON(raw)
+
+	if !json.Valid(redacted) {
+		t.Fatalf("RedactJSON() returned invalid JSON: %s", redacted)
+	}
+	text := string(redacted)
+	if strings.Contains(text, "request-secret") || strings.Contains(text, "tool-secret") {
+		t.Fatalf("RedactJSON() leaked secret values: %s", text)
+	}
+	if !strings.Contains(text, "visible") || !strings.Contains(text, "[REDACTED]") {
+		t.Fatalf("RedactJSON() lost visible content or redaction marker: %s", text)
+	}
+}
+
+func assertSummaryIDs(t *testing.T, entries []EntrySummary, want []string) {
+	t.Helper()
+	if len(entries) != len(want) {
+		t.Fatalf("got %d entries, want %d: %+v", len(entries), len(want), entries)
+	}
+	for i, entry := range entries {
+		if entry.ID != want[i] {
+			t.Fatalf("entry[%d].ID = %q, want %q; entries=%+v", i, entry.ID, want[i], entries)
+		}
 	}
 }
 
