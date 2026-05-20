@@ -67,6 +67,14 @@ Default persistent paths in `docker-compose.yml`:
 - `./data` -> `/CLIProxyAPI/data`
 - `./logs` -> `/CLIProxyAPI/logs`
 
+The Compose file keeps upstream-compatible default host ports, but each host port can be overridden from `.env`. For example, if host port `1455` is already in use and you do not need the Codex OAuth callback on that exact local port:
+
+```env
+CLI_PROXY_CODEX_CALLBACK_PORT=1456
+```
+
+Keep host port `1455` available when you rely on the built-in Codex OAuth callback, because the OAuth redirect URI uses `http://localhost:1455/auth/callback`.
+
 Docker bridge requests are remote from the container's point of view, so `config.docker.example.yaml` enables `remote-management.allow-remote` and requires a management key. Replace the example keys before exposing the service beyond your own machine.
 
 Keep `config.yaml`, `.env`, OAuth files, API keys, auth directories, logs, data snapshots, and generated stores out of git.
