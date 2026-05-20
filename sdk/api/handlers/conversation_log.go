@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/conversationlog"
@@ -125,7 +126,7 @@ func (r *conversationLogRecorder) captureStreamChunk(chunk []byte) {
 		return
 	}
 	if int64(len(redacted)) > remaining {
-		redacted = redacted[:remaining]
+		redacted = truncateConversationBytes(redacted, remaining)
 		r.responseCut = true
 	}
 	r.responseChunks = append(r.responseChunks, string(redacted))
@@ -309,7 +310,7 @@ func conversationPayloadFromBytes(raw []byte, budget int64) conversationlog.Payl
 	}
 	truncated := false
 	if budget > 0 && int64(len(rendered)) > budget {
-		rendered = rendered[:budget]
+		rendered = truncateConversationBytes(rendered, budget)
 		truncated = true
 	}
 	payload := conversationlog.Payload{
@@ -409,5 +410,23 @@ func truncateConversationString(value string, max int) string {
 	if max <= 0 || len(value) <= max {
 		return value
 	}
-	return value[:max] + "...[truncated]"
+	return string(truncateConversationBytes([]byte(value), int64(max))) + "...[truncated]"
+}
+
+func truncateConversationBytes(value []byte, max int64) []byte {
+	if max <= 0 {
+		return nil
+	}
+	if int64(len(value)) <= max {
+		return value
+	}
+	cut := int(max)
+	out := value[:cut]
+	if !utf8.Valid(value) {
+		return out
+	}
+	for len(out) > 0 && !utf8.Valid(out) {
+		out = out[:len(out)-1]
+	}
+	return out
 }

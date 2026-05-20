@@ -858,12 +858,7 @@ func validateSSEDataJSON(chunk []byte) error {
 		if json.Valid(data) {
 			continue
 		}
-		const max = 512
-		preview := data
-		if len(preview) > max {
-			preview = preview[:max]
-		}
-		return fmt.Errorf("invalid SSE data JSON (len=%d): %q", len(data), preview)
+		return fmt.Errorf("invalid SSE data JSON (len=%d)", len(data))
 	}
 	return nil
 }

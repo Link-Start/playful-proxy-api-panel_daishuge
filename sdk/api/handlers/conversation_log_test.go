@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/conversationlog"
@@ -276,6 +277,48 @@ func TestConversationLogStreamingTruncatesLargeChunksWithoutTruncatingClient(t *
 	captured := strings.Join(entry.Response.Chunks, "")
 	if len(captured) != int(conversationBodyBudget(store)) {
 		t.Fatalf("captured log chunk bytes = %d, want %d", len(captured), conversationBodyBudget(store))
+	}
+}
+
+func TestConversationLogStreamingTruncatesUTF8ChunksAtRuneBoundary(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := conversationlog.NewStore(conversationlog.Options{
+		Enabled:           true,
+		Directory:         filepath.Join(t.TempDir(), "conversation"),
+		MaxFileSizeBytes:  64 * 1024,
+		MaxTotalSizeBytes: 128 * 1024,
+		MaxEntryBytes:     4096,
+	})
+	largeChunk := strings.Repeat("你", int(conversationBodyBudget(store)))
+	executor := &conversationLogTestExecutor{
+		provider: "conversation-log-stream-utf8-truncate",
+		streamChunks: []coreexecutor.StreamChunk{
+			{Payload: []byte(largeChunk)},
+		},
+	}
+	handler, model := newConversationLogTestHandler(t, store, executor)
+	body := []byte(fmt.Sprintf(`{"model":%q,"stream":true,"messages":[{"role":"user","content":"hello"}]}`, model))
+	ctx := newConversationLogRequestContext(t, handler, http.MethodPost, "/v1/chat/completions", body, "req-stream-utf8")
+
+	data, _, errs := handler.ExecuteStreamWithAuthManager(ctx, "openai", model, body, "")
+	for range data {
+	}
+	for errMsg := range errs {
+		if errMsg != nil {
+			t.Fatalf("unexpected stream error: %+v", errMsg)
+		}
+	}
+
+	entry := readSingleConversationEntry(t, store)
+	captured := strings.Join(entry.Response.Chunks, "")
+	if !utf8.ValidString(captured) {
+		t.Fatalf("captured log chunk is not valid UTF-8: %q", captured)
+	}
+	if strings.ContainsRune(captured, utf8.RuneError) {
+		t.Fatalf("captured log chunk contains replacement runes from a split UTF-8 sequence: %q", captured)
+	}
+	if !entry.Response.Truncated {
+		t.Fatalf("expected logged response to be marked truncated")
 	}
 }
 
