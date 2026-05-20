@@ -53,7 +53,7 @@ func NewProxyAwareHTTPClient(ctx context.Context, cfg *config.Config, auth *clip
 			return httpClient
 		}
 		// If proxy setup failed, log and fall through to context RoundTripper
-		log.Debug("failed to setup configured proxy transport, falling back to context transport")
+		log.Debugf("failed to setup proxy from URL: %s, falling back to context transport", proxyutil.Redact(proxyURL))
 	}
 
 	// Priority 3: Use RoundTripper from context (typically from RoundTripperFor)

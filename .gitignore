@@ -30,6 +30,7 @@ local-smoke-auth/
 
 # Documentation
 docs/*
+!docs/rpi-cpa-translation-concurrency-optimization-plan_CN.md
 AGENTS.md
 CLAUDE.md
 GEMINI.md
