@@ -32,6 +32,7 @@ import { HTTP_METHODS, STATUS_GROUPS, resolveStatusGroup, type LogState } from '
 import { parseLogLine } from './hooks/logParsing';
 import { useLogFilters } from './hooks/useLogFilters';
 import { isNearBottom, useLogScroller } from './hooks/useLogScroller';
+import { ConversationLogsPanel } from './ConversationLogsPanel';
 import styles from './LogsPage.module.scss';
 
 interface ErrorLogItem {
@@ -63,7 +64,7 @@ const getErrorMessage = (err: unknown): string => {
   return typeof message === 'string' ? message : '';
 };
 
-type TabType = 'logs' | 'errors';
+type TabType = 'logs' | 'errors' | 'conversations';
 
 const formatBytes = (value?: number): string => {
   const bytes = Number.isFinite(value) && value ? Math.max(value, 0) : 0;
@@ -535,9 +536,18 @@ export function LogsPage() {
         >
           {t('logs.error_logs_modal_title')}
         </button>
+        <button
+          type="button"
+          className={`${styles.tabItem} ${activeTab === 'conversations' ? styles.tabActive : ''}`}
+          onClick={() => setActiveTab('conversations')}
+        >
+          {t('logs.conversation_tab')}
+        </button>
       </div>
 
       <div className={styles.content}>
+        {activeTab === 'conversations' && <ConversationLogsPanel />}
+
         {activeTab === 'logs' && (
           <Card className={styles.logCard}>
             {error && <div className="error-box">{error}</div>}
