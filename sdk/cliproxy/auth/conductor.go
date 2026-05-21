@@ -2106,7 +2106,9 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 			}
 		} else {
 			if result.Model != "" {
-				if !isRequestScopedNotFoundResultError(result.Error) {
+				if isRequestScopedTransientResultError(result.Error) {
+					recordRequestScopedTransientFailure(auth, result.Model, result.Error, now)
+				} else if !isRequestScopedNotFoundResultError(result.Error) {
 					disableCooling := quotaCooldownDisabledForAuth(auth)
 					state := ensureModelState(auth, result.Model)
 					state.Unavailable = true
@@ -2505,6 +2507,47 @@ func isRequestScopedNotFoundResultError(err *Error) bool {
 		return false
 	}
 	return isRequestScopedNotFoundMessage(err.Message)
+}
+
+func isRequestScopedTransientResultError(err *Error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Message)
+	switch statusCodeFromResult(err) {
+	case http.StatusRequestTimeout:
+		return strings.Contains(message, "stream disconnected before completion") ||
+			strings.Contains(message, "stream closed before response.completed")
+	case http.StatusBadGateway:
+		return strings.Contains(message, "upstream transport error") &&
+			strings.Contains(message, "eof")
+	case http.StatusInternalServerError:
+		return strings.Contains(message, "context canceled")
+	default:
+		return false
+	}
+}
+
+func recordRequestScopedTransientFailure(auth *Auth, model string, resultErr *Error, now time.Time) {
+	if auth == nil || model == "" {
+		return
+	}
+	state := ensureModelState(auth, model)
+	state.Status = StatusError
+	state.StatusMessage = ""
+	state.Unavailable = false
+	state.NextRetryAfter = time.Time{}
+	state.UpdatedAt = now
+	if resultErr != nil {
+		cloned := cloneError(resultErr)
+		state.LastError = cloned
+		state.StatusMessage = resultErr.Message
+		auth.LastError = cloned
+		auth.StatusMessage = resultErr.Message
+	}
+	auth.Status = StatusError
+	auth.UpdatedAt = now
+	updateAggregatedAvailability(auth, now)
 }
 
 // isRequestInvalidError returns true if the error represents a client request

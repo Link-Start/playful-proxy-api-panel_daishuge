@@ -32,6 +32,7 @@ import { HTTP_METHODS, STATUS_GROUPS, resolveStatusGroup, type LogState } from '
 import { parseLogLine } from './hooks/logParsing';
 import { useLogFilters } from './hooks/useLogFilters';
 import { isNearBottom, useLogScroller } from './hooks/useLogScroller';
+import { ConversationLogsPanel } from './ConversationLogsPanel';
 import styles from './LogsPage.module.scss';
 
 interface ErrorLogItem {
@@ -63,7 +64,10 @@ const getErrorMessage = (err: unknown): string => {
   return typeof message === 'string' ? message : '';
 };
 
-type TabType = 'logs' | 'errors';
+const isLoggingDisabledError = (err: unknown): boolean =>
+  getErrorMessage(err).trim().toLowerCase() === 'logging to file disabled';
+
+type TabType = 'logs' | 'errors' | 'conversations';
 
 const formatBytes = (value?: number): string => {
   const bytes = Number.isFinite(value) && value ? Math.max(value, 0) : 0;
@@ -149,7 +153,9 @@ export function LogsPage() {
       const data = await logsApi.fetchStorage();
       setLogStorage(data);
     } catch (err: unknown) {
-      console.error('Failed to load log storage:', err);
+      if (!isLoggingDisabledError(err)) {
+        console.error('Failed to load log storage:', err);
+      }
       setLogStorage(null);
     } finally {
       setStorageLoading(false);
@@ -218,7 +224,9 @@ export function LogsPage() {
         setLogState({ buffer, visibleFrom });
       }
     } catch (err: unknown) {
-      console.error('Failed to load logs:', err);
+      if (!isLoggingDisabledError(err)) {
+        console.error('Failed to load logs:', err);
+      }
       if (!incremental) {
         setError(getErrorMessage(err) || t('logs.load_error'));
       }
@@ -286,7 +294,9 @@ export function LogsPage() {
       // API returns { files: [...] }.
       setErrorLogs(Array.isArray(res.files) ? res.files : []);
     } catch (err: unknown) {
-      console.error('Failed to load error logs:', err);
+      if (!isLoggingDisabledError(err)) {
+        console.error('Failed to load error logs:', err);
+      }
       setErrorLogs([]);
       const message = getErrorMessage(err);
       setErrorLogsError(
@@ -535,9 +545,18 @@ export function LogsPage() {
         >
           {t('logs.error_logs_modal_title')}
         </button>
+        <button
+          type="button"
+          className={`${styles.tabItem} ${activeTab === 'conversations' ? styles.tabActive : ''}`}
+          onClick={() => setActiveTab('conversations')}
+        >
+          {t('logs.conversation_tab')}
+        </button>
       </div>
 
       <div className={styles.content}>
+        {activeTab === 'conversations' && <ConversationLogsPanel />}
+
         {activeTab === 'logs' && (
           <Card className={styles.logCard}>
             {error && <div className="error-box">{error}</div>}

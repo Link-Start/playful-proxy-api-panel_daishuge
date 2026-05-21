@@ -31,12 +31,27 @@ usage-statistics-path: "/CLIProxyAPI/data/usage-statistics.json"
 usage-statistics-flush-interval-seconds: 30
 redis-usage-queue-retention-seconds: 60
 
+conversation-log:
+  enabled: false
+  directory: "/CLIProxyAPI/data/conversation-logs"
+  max-file-size-mb: 16
+  max-total-size-mb: 256
+  max-entry-bytes: 2097152
+
+preset-prompt:
+  enabled: false
+  prompt: ""
+  max-bytes: 32768
+
 proxy-url: ""
 force-model-prefix: false
 request-retry: 3
 max-retry-credentials: 0
 max-retry-interval: 30
 disable-cooling: false
+
+# Require API key authentication for /v1/ws by default in Docker deployments.
+ws-auth: true
 
 upstream-concurrency:
   default: 0
