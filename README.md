@@ -91,6 +91,7 @@ Start from [`config.example.yaml`](config.example.yaml). The most useful PPAP-sp
 - `usage-statistics-path`: optionally move the usage snapshot away from the config directory.
 - `redis-usage-queue-retention-seconds`: tune Redis usage queue retention when Redis usage queueing is enabled.
 - `/v0/management/usage-queue`: pop queued usage records for integrations that consume the Redis-compatible usage stream.
+- `api-key-controls`: optionally restrict individual client keys by model patterns and request/token budgets. Enable usage statistics when using budgets.
 - `conversation-log`: disabled by default; enable only when you want protected full request/response body logs.
 - `preset-prompt`: disabled by default; injects an operator prompt only into upstream chat-like requests.
 - `oauth-model-alias`: define friendly model aliases while preserving old config compatibility.

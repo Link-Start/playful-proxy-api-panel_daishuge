@@ -296,12 +296,13 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	s.setupRoutes()
 
 	// Register Amp module using V2 interface with Context
-	s.ampModule = ampmodule.NewLegacy(accessManager, AuthMiddleware(accessManager))
+	clientAuthMiddleware := s.authAndAPIKeyControlMiddleware()
+	s.ampModule = ampmodule.NewLegacy(accessManager, clientAuthMiddleware)
 	ctx := modules.Context{
 		Engine:         engine,
 		BaseHandler:    s.handlers,
 		Config:         cfg,
-		AuthMiddleware: AuthMiddleware(accessManager),
+		AuthMiddleware: clientAuthMiddleware,
 	}
 	if err := modules.RegisterModule(ctx, s.ampModule); err != nil {
 		log.Errorf("Failed to register Amp module: %v", err)
@@ -356,8 +357,9 @@ func (s *Server) setupRoutes() {
 	openaiResponsesHandlers := openai.NewOpenAIResponsesAPIHandler(s.handlers)
 
 	// OpenAI compatible API routes
+	clientAuthMiddleware := s.authAndAPIKeyControlMiddleware()
 	v1 := s.engine.Group("/v1")
-	v1.Use(AuthMiddleware(s.accessManager))
+	v1.Use(clientAuthMiddleware)
 	{
 		v1.GET("/models", s.unifiedModelsHandler(openaiHandlers, claudeCodeHandlers))
 		v1.POST("/chat/completions", openaiHandlers.ChatCompletions)
@@ -373,7 +375,7 @@ func (s *Server) setupRoutes() {
 
 	// Codex CLI direct route aliases (chatgpt_base_url compatible)
 	codexDirect := s.engine.Group("/backend-api/codex")
-	codexDirect.Use(AuthMiddleware(s.accessManager))
+	codexDirect.Use(clientAuthMiddleware)
 	{
 		codexDirect.GET("/responses", openaiResponsesHandlers.ResponsesWebsocket)
 		codexDirect.POST("/responses", openaiResponsesHandlers.Responses)
@@ -382,9 +384,9 @@ func (s *Server) setupRoutes() {
 
 	// Gemini compatible API routes
 	v1beta := s.engine.Group("/v1beta")
-	v1beta.Use(AuthMiddleware(s.accessManager))
+	v1beta.Use(clientAuthMiddleware)
 	{
-		v1beta.GET("/models", geminiHandlers.GeminiModels)
+		v1beta.GET("/models", s.geminiModelsHandler(geminiHandlers))
 		v1beta.POST("/models/*action", geminiHandlers.GeminiHandler)
 		v1beta.GET("/models/*action", geminiHandlers.GeminiGetHandler)
 	}
@@ -485,7 +487,7 @@ func (s *Server) AttachWebsocketRoute(path string, handler http.Handler) {
 	s.wsRoutes[trimmed] = struct{}{}
 	s.wsRouteMu.Unlock()
 
-	authMiddleware := AuthMiddleware(s.accessManager)
+	authMiddleware := s.authAndAPIKeyControlMiddleware()
 	conditionalAuth := func(c *gin.Context) {
 		if !s.wsAuthEnabled.Load() {
 			c.Next()
@@ -805,10 +807,44 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
 		// Route to Claude handler if User-Agent starts with "claude-cli"
 		if strings.HasPrefix(userAgent, "claude-cli") {
 			// log.Debugf("Routing /v1/models to Claude handler for User-Agent: %s", userAgent)
-			claudeHandler.ClaudeModels(c)
+			models := s.filterModelsForAPIKey(c, claudeHandler.Models())
+			firstID := ""
+			lastID := ""
+			if len(models) > 0 {
+				if id, ok := models[0]["id"].(string); ok {
+					firstID = id
+				}
+				if id, ok := models[len(models)-1]["id"].(string); ok {
+					lastID = id
+				}
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"data":     models,
+				"has_more": false,
+				"first_id": firstID,
+				"last_id":  lastID,
+			})
 		} else {
 			// log.Debugf("Routing /v1/models to OpenAI handler for User-Agent: %s", userAgent)
-			openaiHandler.OpenAIModels(c)
+			models := s.filterModelsForAPIKey(c, openaiHandler.Models())
+			filteredModels := make([]map[string]any, len(models))
+			for i, model := range models {
+				filteredModel := map[string]any{
+					"id":     model["id"],
+					"object": model["object"],
+				}
+				if created, exists := model["created"]; exists {
+					filteredModel["created"] = created
+				}
+				if ownedBy, exists := model["owned_by"]; exists {
+					filteredModel["owned_by"] = ownedBy
+				}
+				filteredModels[i] = filteredModel
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"object": "list",
+				"data":   filteredModels,
+			})
 		}
 	}
 }
@@ -1160,30 +1196,33 @@ func (s *Server) SetWebsocketAuthChangeHandler(fn func(bool, bool)) {
 // it allows all requests (legacy behaviour).
 func AuthMiddleware(manager *sdkaccess.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if manager == nil {
+		if authenticateRequest(c, manager) {
 			c.Next()
-			return
 		}
-
-		result, err := manager.Authenticate(c.Request.Context(), c.Request)
-		if err == nil {
-			if result != nil {
-				c.Set("apiKey", result.Principal)
-				c.Set("accessProvider", result.Provider)
-				if len(result.Metadata) > 0 {
-					c.Set("accessMetadata", result.Metadata)
-				}
-			}
-			c.Next()
-			return
-		}
-
-		statusCode := err.HTTPStatusCode()
-		if statusCode >= http.StatusInternalServerError {
-			log.Errorf("authentication middleware error: %v", err)
-		}
-		c.AbortWithStatusJSON(statusCode, gin.H{"error": err.Message})
 	}
+}
+
+func authenticateRequest(c *gin.Context, manager *sdkaccess.Manager) bool {
+	if manager == nil {
+		return true
+	}
+	result, err := manager.Authenticate(c.Request.Context(), c.Request)
+	if err == nil {
+		if result != nil {
+			c.Set("apiKey", result.Principal)
+			c.Set("accessProvider", result.Provider)
+			if len(result.Metadata) > 0 {
+				c.Set("accessMetadata", result.Metadata)
+			}
+		}
+		return true
+	}
+	statusCode := err.HTTPStatusCode()
+	if statusCode >= http.StatusInternalServerError {
+		log.Errorf("authentication middleware error: %v", err)
+	}
+	c.AbortWithStatusJSON(statusCode, gin.H{"error": err.Message})
+	return false
 }
 
 func configuredSignatureCacheEnabled(cfg *config.Config) bool {

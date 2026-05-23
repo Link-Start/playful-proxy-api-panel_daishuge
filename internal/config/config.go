@@ -165,7 +165,27 @@ type Config struct {
 	// Payload defines default and override rules for provider payload parameters.
 	Payload PayloadConfig `yaml:"payload" json:"payload"`
 
+	// APIKeyControls optionally restrict client API keys to specific models and usage budgets.
+	// Entries are matched by exact key. Keys without an entry keep the legacy unrestricted behavior.
+	APIKeyControls []APIKeyControl `yaml:"api-key-controls,omitempty" json:"api-key-controls,omitempty"`
+
 	legacyMigrationPending bool `yaml:"-" json:"-"`
+}
+
+// APIKeyControl defines optional model and usage limits for one downstream API key.
+// Budget values <= 0 are treated as unlimited. The Unlimited flag bypasses usage budgets,
+// but model allow/deny rules still apply.
+type APIKeyControl struct {
+	APIKey         string   `yaml:"api-key,omitempty" json:"api-key,omitempty"`
+	Key            string   `yaml:"key,omitempty" json:"key,omitempty"`
+	Name           string   `yaml:"name,omitempty" json:"name,omitempty"`
+	Enabled        *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Unlimited      bool     `yaml:"unlimited,omitempty" json:"unlimited,omitempty"`
+	Models         []string `yaml:"models,omitempty" json:"models,omitempty"`
+	ExcludedModels []string `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
+	MaxRequests    int64    `yaml:"max-requests,omitempty" json:"max-requests,omitempty"`
+	MaxInputTokens int64    `yaml:"max-input-tokens,omitempty" json:"max-input-tokens,omitempty"`
+	MaxTotalTokens int64    `yaml:"max-total-tokens,omitempty" json:"max-total-tokens,omitempty"`
 }
 
 // ClaudeHeaderDefaults configures default header values injected into Claude API requests.

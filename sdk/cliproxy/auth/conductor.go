@@ -3587,7 +3587,12 @@ func (m *Manager) refreshAuth(ctx context.Context, id string) {
 		m.mu.Lock()
 		if current := m.auths[id]; current != nil {
 			current.NextRefreshAfter = now.Add(refreshFailureBackoff)
+			current.Unavailable = true
+			current.Status = StatusError
+			current.StatusMessage = "refresh failed"
+			current.NextRetryAfter = now.Add(refreshFailureBackoff)
 			current.LastError = &Error{Message: err.Error()}
+			current.UpdatedAt = now
 			m.auths[id] = current
 			shouldReschedule = true
 			if m.scheduler != nil {
@@ -3610,7 +3615,11 @@ func (m *Manager) refreshAuth(ctx context.Context, id string) {
 	}
 	updated.LastRefreshedAt = now
 	updated.NextRefreshAfter = time.Time{}
+	updated.Unavailable = false
+	updated.Status = StatusActive
+	updated.StatusMessage = ""
 	updated.LastError = nil
+	updated.NextRetryAfter = time.Time{}
 	updated.UpdatedAt = now
 	if m.shouldRefresh(updated, now) {
 		updated.NextRefreshAfter = now.Add(refreshIneffectiveBackoff)

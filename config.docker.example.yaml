@@ -21,6 +21,14 @@ auth-dir: "/root/.cli-proxy-api"
 api-keys:
   - "change-me-api-key"
 
+# Optional per-key model and usage controls. Keys without an entry keep the legacy unrestricted behavior.
+api-key-controls:
+  - name: "default"
+    api-key: "change-me-api-key"
+    models:
+      - "*"
+    unlimited: true
+
 debug: false
 logging-to-file: true
 logs-max-total-size-mb: 1024
