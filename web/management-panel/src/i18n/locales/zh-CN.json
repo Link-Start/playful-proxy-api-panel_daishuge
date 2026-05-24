@@ -1156,6 +1156,8 @@
           "allow_remote_desc": "允许从其他主机访问管理接口",
           "disable_panel": "禁用控制面板",
           "disable_panel_desc": "禁用内置的 Web 控制面板",
+          "disable_auto_update": "禁用面板自动更新",
+          "disable_auto_update_desc": "首次下载后保持当前管理面板版本",
           "secret_key": "管理密钥",
           "secret_key_placeholder": "设置管理密钥",
           "panel_repo": "面板仓库"
@@ -1164,7 +1166,10 @@
           "title": "认证配置",
           "description": "API 密钥与认证文件目录设置",
           "auth_dir": "认证文件目录 (auth-dir)",
-          "auth_dir_hint": "存放认证文件的目录路径（支持 ~）"
+          "auth_dir_hint": "存放认证文件的目录路径（支持 ~）",
+          "api_key_controls": "API Key 控制 (api-key-controls)",
+          "api_key_controls_hint": "按客户端 key 配置模型访问、preset prompt 和预算的 YAML 数组",
+          "api_key_controls_placeholder": "- name: spark-only\n  api-key: your-api-key\n  models:\n    - gpt-5.3-codex-spark*\n  unlimited: true"
         },
         "system": {
           "title": "系统配置",
@@ -1175,7 +1180,34 @@
           "commercial_mode_desc": "禁用高开销中间件以支持高并发",
           "logging_to_file": "写入日志文件",
           "logging_to_file_desc": "将日志保存到文件",
-          "logs_max_size": "日志文件大小限制 (MB)"
+          "logs_max_size": "日志文件大小限制 (MB)",
+          "pprof_enable": "启用 pprof",
+          "pprof_enable_desc": "启动 pprof 调试服务",
+          "pprof_addr": "pprof 地址"
+        },
+        "observability": {
+          "title": "可观测性",
+          "description": "错误日志、用量持久化、会话日志与 preset prompt 设置",
+          "error_logs_max_files": "错误日志文件数量限制",
+          "redis_usage_queue_retention": "Redis 用量队列保留秒数",
+          "usage_title": "使用量统计",
+          "usage_desc": "聚合并持久化请求用量指标",
+          "usage_enabled": "启用使用量统计",
+          "usage_path": "使用量统计文件",
+          "usage_flush_interval": "使用量写盘间隔 (秒)",
+          "conversation_title": "会话日志",
+          "conversation_desc": "显式启用后保存完整请求与响应正文",
+          "conversation_enabled": "启用会话日志",
+          "conversation_directory": "会话日志目录",
+          "conversation_max_file_size": "会话日志单文件限制 (MB)",
+          "conversation_max_total_size": "会话日志总大小限制 (MB)",
+          "conversation_max_entry_bytes": "会话日志单条限制 (bytes)",
+          "preset_prompt_title": "Preset Prompt",
+          "preset_prompt_desc": "向上游 chat-like 请求注入 operator prompt",
+          "preset_prompt_enabled": "启用 Preset Prompt",
+          "preset_prompt": "Preset Prompt 文本",
+          "preset_prompt_placeholder": "Operator prompt 文本",
+          "preset_prompt_max_bytes": "Preset Prompt 大小限制 (bytes)"
         },
         "network": {
           "title": "网络配置",
@@ -1194,7 +1226,20 @@
           "force_model_prefix_desc": "未带前缀的模型请求只使用无前缀凭据",
           "session_affinity": "会话粘性路由",
           "ws_auth": "WebSocket 认证",
-          "ws_auth_desc": "启用 WebSocket 连接认证 (/v1/ws)"
+          "ws_auth_desc": "启用 WebSocket 连接认证 (/v1/ws)",
+          "passthrough_headers": "透传响应头",
+          "passthrough_headers_desc": "把过滤后的上游响应头转发给下游客户端",
+          "disable_cooling": "禁用冷却",
+          "disable_cooling_desc": "禁用全局 auth/model 冷却调度",
+          "upstream_concurrency_default": "默认上游并发",
+          "upstream_concurrency_queue_timeout": "并发队列超时 (秒)",
+          "upstream_concurrency_providers": "Provider 并发限制",
+          "upstream_concurrency_providers_hint": "按 provider 配置的 YAML map，例如 codex: 12",
+          "disable_image_generation": "图片生成模式",
+          "disable_image_generation_hint": "选择 image_generation 的暴露方式",
+          "image_generation_enabled": "启用",
+          "image_generation_disabled": "全部禁用",
+          "image_generation_chat_only": "仅在 chat 中禁用"
         },
         "quota": {
           "title": "配额回退",
@@ -1285,6 +1330,9 @@
         "validation_blocked": "请先修复表单校验错误再保存",
         "port_range": "请输入 1 到 65535 之间的有效端口",
         "non_negative_integer": "请输入非负整数",
+        "invalid_yaml": "请输入有效 YAML",
+        "yaml_array": "请输入 YAML 数组",
+        "yaml_map": "请输入 YAML map",
         "payload_invalid_number": "请输入有效数字",
         "payload_invalid_boolean": "请选择 true 或 false",
         "payload_invalid_json": "请输入有效的 JSON"
@@ -1329,7 +1377,7 @@
     "total_tokens": "总 Tokens",
     "cached_tokens": "缓存 Tokens",
     "estimated_cost": "预估费用",
-    "pricing_source": "按 OpenAI {{date}} 标准价格估算，单位 {{unit}}；Spark 预览期临时沿用 GPT-5.3-Codex 估算价",
+    "pricing_source": "按 OpenAI {{date}} 标准价格估算，单位 {{unit}}；Spark 使用本地预览估算价：每 1M tokens 输入 $0.01、缓存输入 $0、输出 $0.01",
     "priced_requests": "已匹配价格的请求 {{count}} 条",
     "average_value": "平均值",
     "total_throughput": "整体吞吐",

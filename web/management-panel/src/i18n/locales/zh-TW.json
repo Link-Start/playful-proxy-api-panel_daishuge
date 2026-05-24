@@ -1136,6 +1136,8 @@
           "allow_remote_desc": "允許從其他主機存取管理介面",
           "disable_panel": "停用控制面板",
           "disable_panel_desc": "停用內建的 Web 控制面板",
+          "disable_auto_update": "停用面板自動更新",
+          "disable_auto_update_desc": "首次下載後保持目前管理面板版本",
           "secret_key": "管理金鑰",
           "secret_key_placeholder": "設定管理金鑰",
           "panel_repo": "面板儲存庫"
@@ -1144,7 +1146,10 @@
           "title": "驗證設定",
           "description": "API 金鑰與驗證檔案目錄設定",
           "auth_dir": "驗證檔案目錄（auth-dir）",
-          "auth_dir_hint": "存放驗證檔案的目錄路徑（支援 ~）"
+          "auth_dir_hint": "存放驗證檔案的目錄路徑（支援 ~）",
+          "api_key_controls": "API Key 控制（api-key-controls）",
+          "api_key_controls_hint": "依 client key 設定模型存取、preset prompt 與 budget 的 YAML array",
+          "api_key_controls_placeholder": "- name: spark-only\n  api-key: your-api-key\n  models:\n    - gpt-5.3-codex-spark*\n  unlimited: true"
         },
         "system": {
           "title": "系統設定",
@@ -1155,7 +1160,34 @@
           "commercial_mode_desc": "停用高開銷中介軟體以支援高並行",
           "logging_to_file": "寫入記錄檔",
           "logging_to_file_desc": "將記錄儲存到檔案",
-          "logs_max_size": "記錄檔大小限制（MB）"
+          "logs_max_size": "記錄檔大小限制（MB）",
+          "pprof_enable": "啟用 pprof",
+          "pprof_enable_desc": "啟動 pprof 除錯服務",
+          "pprof_addr": "pprof 位址"
+        },
+        "observability": {
+          "title": "可觀測性",
+          "description": "錯誤記錄、用量持久化、對話記錄與 preset prompt 設定",
+          "error_logs_max_files": "錯誤記錄檔數量限制",
+          "redis_usage_queue_retention": "Redis 用量佇列保留秒數",
+          "usage_title": "使用量統計",
+          "usage_desc": "彙總並持久化請求用量指標",
+          "usage_enabled": "啟用使用量統計",
+          "usage_path": "使用量統計檔案",
+          "usage_flush_interval": "使用量寫入間隔（秒）",
+          "conversation_title": "對話記錄",
+          "conversation_desc": "明確啟用後保存完整請求與回應內容",
+          "conversation_enabled": "啟用對話記錄",
+          "conversation_directory": "對話記錄目錄",
+          "conversation_max_file_size": "對話記錄單檔限制（MB）",
+          "conversation_max_total_size": "對話記錄總大小限制（MB）",
+          "conversation_max_entry_bytes": "對話記錄單筆限制（bytes）",
+          "preset_prompt_title": "Preset Prompt",
+          "preset_prompt_desc": "向上游 chat-like 請求注入 operator prompt",
+          "preset_prompt_enabled": "啟用 Preset Prompt",
+          "preset_prompt": "Preset Prompt 文字",
+          "preset_prompt_placeholder": "Operator prompt 文字",
+          "preset_prompt_max_bytes": "Preset Prompt 大小限制（bytes）"
         },
         "network": {
           "title": "網路設定",
@@ -1174,7 +1206,20 @@
           "force_model_prefix_desc": "未帶前綴的模型請求只使用無前綴憑證",
           "session_affinity": "會話黏性路由",
           "ws_auth": "WebSocket 驗證",
-          "ws_auth_desc": "啟用 WebSocket 連線驗證（/v1/ws）"
+          "ws_auth_desc": "啟用 WebSocket 連線驗證（/v1/ws）",
+          "passthrough_headers": "透傳回應標頭",
+          "passthrough_headers_desc": "把過濾後的上游回應標頭轉發給下游 client",
+          "disable_cooling": "停用冷卻",
+          "disable_cooling_desc": "停用全域 auth/model 冷卻排程",
+          "upstream_concurrency_default": "預設上游並行",
+          "upstream_concurrency_queue_timeout": "並行佇列逾時（秒）",
+          "upstream_concurrency_providers": "Provider 並行限制",
+          "upstream_concurrency_providers_hint": "依 provider 設定的 YAML map，例如 codex: 12",
+          "disable_image_generation": "圖片生成模式",
+          "disable_image_generation_hint": "選擇 image_generation 的暴露方式",
+          "image_generation_enabled": "啟用",
+          "image_generation_disabled": "全部停用",
+          "image_generation_chat_only": "僅在 chat 中停用"
         },
         "quota": {
           "title": "配額回退",
@@ -1265,6 +1310,9 @@
         "validation_blocked": "請先修復表單驗證錯誤再儲存",
         "port_range": "請輸入 1 到 65535 之間的有效連接埠",
         "non_negative_integer": "請輸入非負整數",
+        "invalid_yaml": "請輸入有效 YAML",
+        "yaml_array": "請輸入 YAML array",
+        "yaml_map": "請輸入 YAML map",
         "payload_invalid_number": "請輸入有效數字",
         "payload_invalid_boolean": "請選擇 true 或 false",
         "payload_invalid_json": "請輸入有效的 JSON"
@@ -1309,7 +1357,7 @@
     "total_tokens": "總 Tokens",
     "cached_tokens": "快取 Tokens",
     "estimated_cost": "預估費用",
-    "pricing_source": "按 OpenAI {{date}} 標準價格估算，單位 {{unit}}；Spark 預覽期暫用 GPT-5.3-Codex 估算價",
+    "pricing_source": "按 OpenAI {{date}} 標準價格估算，單位 {{unit}}；Spark 使用本地預覽估算價：每 1M tokens 輸入 $0.01、快取輸入 $0、輸出 $0.01",
     "priced_requests": "已匹配價格的請求 {{count}} 條",
     "average_value": "平均值",
     "total_throughput": "整體吞吐",

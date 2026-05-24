@@ -116,7 +116,7 @@ gpt-5.3-codex-spark(high)
 
 ## Codex Spark Pricing
 
-PPAP pricing data には `gpt-5.3-codex-spark` が含まれています。公式 preview pricing が安定するまでは、`gpt-5.3-codex` の推定 rate を使います。
+PPAP pricing data には `gpt-5.3-codex-spark` が含まれています。現在は 1M tokens あたり input $0.01、cached input $0、output $0.01 として推定します。
 
 References:
 

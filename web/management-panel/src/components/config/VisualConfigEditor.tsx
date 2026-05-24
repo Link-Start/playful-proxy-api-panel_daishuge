@@ -17,6 +17,7 @@ import { Select } from '@/components/ui/Select';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import {
   IconCode,
+  IconChartLine,
   IconDiamond,
   IconKey,
   IconSatellite,
@@ -50,6 +51,7 @@ type VisualSectionId =
   | 'remote'
   | 'auth'
   | 'system'
+  | 'observability'
   | 'network'
   | 'quota'
   | 'streaming'
@@ -170,6 +172,51 @@ function FieldShell({
   );
 }
 
+function YamlBlockField({
+  label,
+  value,
+  hint,
+  error,
+  disabled,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  error?: string;
+  disabled?: boolean;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  const inputId = useId();
+  const hintId = hint ? `${inputId}-hint` : undefined;
+  const errorId = error ? `${inputId}-error` : undefined;
+
+  return (
+    <FieldShell
+      label={label}
+      htmlFor={inputId}
+      hint={hint}
+      hintId={hintId}
+      error={error}
+      errorId={errorId}
+    >
+      <textarea
+        id={inputId}
+        className={`input ${styles.yamlBlockInput}`}
+        value={value}
+        placeholder={placeholder}
+        disabled={disabled}
+        spellCheck={false}
+        aria-describedby={[hintId, errorId].filter(Boolean).join(' ') || undefined}
+        aria-invalid={Boolean(error)}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </FieldShell>
+  );
+}
+
 export function VisualConfigEditor({
   values,
   validationErrors,
@@ -185,6 +232,8 @@ export function VisualConfigEditor({
   const shouldRenderFloatingSidebar = !isMobile && isFloatingSidebar && isCurrentLayer;
   const routingStrategyLabelId = useId();
   const routingStrategyHintId = `${routingStrategyLabelId}-hint`;
+  const disableImageGenerationLabelId = useId();
+  const disableImageGenerationHintId = `${disableImageGenerationLabelId}-hint`;
   const keepaliveInputId = useId();
   const keepaliveHintId = `${keepaliveInputId}-hint`;
   const keepaliveErrorId = `${keepaliveInputId}-error`;
@@ -208,10 +257,48 @@ export function VisualConfigEditor({
     values.streaming.nonstreamKeepaliveInterval === '0';
 
   const portError = getValidationMessage(t, validationErrors?.port);
+  const apiKeyControlsError = getValidationMessage(t, validationErrors?.apiKeyControlsYaml);
   const logsMaxSizeError = getValidationMessage(t, validationErrors?.logsMaxTotalSizeMb);
+  const errorLogsMaxFilesError = getValidationMessage(t, validationErrors?.errorLogsMaxFiles);
+  const usageStatisticsFlushIntervalError = getValidationMessage(
+    t,
+    validationErrors?.usageStatisticsFlushIntervalSeconds
+  );
+  const conversationLogMaxFileSizeError = getValidationMessage(
+    t,
+    validationErrors?.conversationLogMaxFileSizeMb
+  );
+  const conversationLogMaxTotalSizeError = getValidationMessage(
+    t,
+    validationErrors?.conversationLogMaxTotalSizeMb
+  );
+  const conversationLogMaxEntryBytesError = getValidationMessage(
+    t,
+    validationErrors?.conversationLogMaxEntryBytes
+  );
+  const presetPromptMaxBytesError = getValidationMessage(
+    t,
+    validationErrors?.presetPromptMaxBytes
+  );
+  const redisUsageQueueRetentionError = getValidationMessage(
+    t,
+    validationErrors?.redisUsageQueueRetentionSeconds
+  );
   const requestRetryError = getValidationMessage(t, validationErrors?.requestRetry);
   const maxRetryCredentialsError = getValidationMessage(t, validationErrors?.maxRetryCredentials);
   const maxRetryIntervalError = getValidationMessage(t, validationErrors?.maxRetryInterval);
+  const upstreamConcurrencyDefaultError = getValidationMessage(
+    t,
+    validationErrors?.upstreamConcurrencyDefault
+  );
+  const upstreamConcurrencyProvidersError = getValidationMessage(
+    t,
+    validationErrors?.upstreamConcurrencyProvidersYaml
+  );
+  const upstreamConcurrencyQueueTimeoutError = getValidationMessage(
+    t,
+    validationErrors?.upstreamConcurrencyQueueTimeoutSeconds
+  );
   const keepaliveError = getValidationMessage(t, validationErrors?.['streaming.keepaliveSeconds']);
   const bootstrapRetriesError = getValidationMessage(
     t,
@@ -281,7 +368,7 @@ export function VisualConfigEditor({
         title: t('config_management.visual.sections.auth.title'),
         description: t('config_management.visual.sections.auth.description'),
         icon: IconKey,
-        errorCount: 0,
+        errorCount: countErrors(['apiKeyControlsYaml']),
       },
       {
         id: 'system',
@@ -291,11 +378,33 @@ export function VisualConfigEditor({
         errorCount: countErrors(['logsMaxTotalSizeMb']),
       },
       {
+        id: 'observability',
+        title: t('config_management.visual.sections.observability.title'),
+        description: t('config_management.visual.sections.observability.description'),
+        icon: IconChartLine,
+        errorCount: countErrors([
+          'errorLogsMaxFiles',
+          'usageStatisticsFlushIntervalSeconds',
+          'conversationLogMaxFileSizeMb',
+          'conversationLogMaxTotalSizeMb',
+          'conversationLogMaxEntryBytes',
+          'presetPromptMaxBytes',
+          'redisUsageQueueRetentionSeconds',
+        ]),
+      },
+      {
         id: 'network',
         title: t('config_management.visual.sections.network.title'),
         description: t('config_management.visual.sections.network.description'),
         icon: IconTrendingUp,
-        errorCount: countErrors(['requestRetry', 'maxRetryCredentials', 'maxRetryInterval']),
+        errorCount: countErrors([
+          'requestRetry',
+          'maxRetryCredentials',
+          'maxRetryInterval',
+          'upstreamConcurrencyDefault',
+          'upstreamConcurrencyProvidersYaml',
+          'upstreamConcurrencyQueueTimeoutSeconds',
+        ]),
       },
       {
         id: 'quota',
@@ -329,7 +438,10 @@ export function VisualConfigEditor({
   const hasValidationIssues =
     sections.some((section) => section.errorCount > 0) || hasPayloadValidationErrors;
   const focusSections = useMemo(
-    () => sections.filter((section) => ['server', 'network', 'payload'].includes(section.id)),
+    () =>
+      sections.filter((section) =>
+        ['server', 'auth', 'observability', 'network', 'payload'].includes(section.id)
+      ),
     [sections]
   );
 
@@ -707,6 +819,15 @@ export function VisualConfigEditor({
                 disabled={disabled}
                 onChange={(rmDisableControlPanel) => onChange({ rmDisableControlPanel })}
               />
+              <ToggleRow
+                title={t('config_management.visual.sections.remote.disable_auto_update')}
+                description={t(
+                  'config_management.visual.sections.remote.disable_auto_update_desc'
+                )}
+                checked={values.rmDisableAutoUpdatePanel}
+                disabled={disabled}
+                onChange={(rmDisableAutoUpdatePanel) => onChange({ rmDisableAutoUpdatePanel })}
+              />
               <SectionGrid>
                 <Input
                   label={t('config_management.visual.sections.remote.secret_key')}
@@ -753,6 +874,17 @@ export function VisualConfigEditor({
                   onChange={handleApiKeysTextChange}
                 />
               </div>
+              <YamlBlockField
+                label={t('config_management.visual.sections.auth.api_key_controls')}
+                value={values.apiKeyControlsYaml}
+                placeholder={t(
+                  'config_management.visual.sections.auth.api_key_controls_placeholder'
+                )}
+                hint={t('config_management.visual.sections.auth.api_key_controls_hint')}
+                error={apiKeyControlsError}
+                disabled={disabled}
+                onChange={(apiKeyControlsYaml) => onChange({ apiKeyControlsYaml })}
+              />
             </SectionStack>
           </ConfigSection>
 
@@ -789,6 +921,13 @@ export function VisualConfigEditor({
                   disabled={disabled}
                   onChange={(loggingToFile) => onChange({ loggingToFile })}
                 />
+                <ToggleRow
+                  title={t('config_management.visual.sections.system.pprof_enable')}
+                  description={t('config_management.visual.sections.system.pprof_enable_desc')}
+                  checked={values.pprofEnable}
+                  disabled={disabled}
+                  onChange={(pprofEnable) => onChange({ pprofEnable })}
+                />
               </SectionGrid>
 
               <SectionGrid>
@@ -801,7 +940,194 @@ export function VisualConfigEditor({
                   disabled={disabled}
                   error={logsMaxSizeError}
                 />
+                <Input
+                  label={t('config_management.visual.sections.system.pprof_addr')}
+                  placeholder="127.0.0.1:8316"
+                  value={values.pprofAddr}
+                  onChange={(e) => onChange({ pprofAddr: e.target.value })}
+                  disabled={disabled}
+                />
               </SectionGrid>
+            </SectionStack>
+          </ConfigSection>
+
+          <ConfigSection
+            id="observability"
+            ref={(node) => {
+              sectionRefs.current.observability = node;
+            }}
+            indexLabel="06"
+            icon={<IconChartLine size={16} />}
+            title={t('config_management.visual.sections.observability.title')}
+            description={t('config_management.visual.sections.observability.description')}
+          >
+            <SectionStack>
+              <SectionGrid>
+                <Input
+                  label={t('config_management.visual.sections.observability.error_logs_max_files')}
+                  type="number"
+                  placeholder="0"
+                  value={values.errorLogsMaxFiles}
+                  onChange={(e) => onChange({ errorLogsMaxFiles: e.target.value })}
+                  disabled={disabled}
+                  error={errorLogsMaxFilesError}
+                />
+                <Input
+                  label={t(
+                    'config_management.visual.sections.observability.redis_usage_queue_retention'
+                  )}
+                  type="number"
+                  placeholder="60"
+                  value={values.redisUsageQueueRetentionSeconds}
+                  onChange={(e) =>
+                    onChange({ redisUsageQueueRetentionSeconds: e.target.value })
+                  }
+                  disabled={disabled}
+                  error={redisUsageQueueRetentionError}
+                />
+              </SectionGrid>
+
+              <Divider />
+
+              <SectionSubsection
+                title={t('config_management.visual.sections.observability.usage_title')}
+                description={t('config_management.visual.sections.observability.usage_desc')}
+              >
+                <SectionGrid>
+                  <ToggleRow
+                    title={t('config_management.visual.sections.observability.usage_enabled')}
+                    checked={values.usageStatisticsEnabled}
+                    disabled={disabled}
+                    onChange={(usageStatisticsEnabled) =>
+                      onChange({ usageStatisticsEnabled })
+                    }
+                  />
+                  <Input
+                    label={t('config_management.visual.sections.observability.usage_path')}
+                    placeholder="usage-statistics.json"
+                    value={values.usageStatisticsPath}
+                    onChange={(e) => onChange({ usageStatisticsPath: e.target.value })}
+                    disabled={disabled}
+                  />
+                  <Input
+                    label={t(
+                      'config_management.visual.sections.observability.usage_flush_interval'
+                    )}
+                    type="number"
+                    placeholder="30"
+                    value={values.usageStatisticsFlushIntervalSeconds}
+                    onChange={(e) =>
+                      onChange({ usageStatisticsFlushIntervalSeconds: e.target.value })
+                    }
+                    disabled={disabled}
+                    error={usageStatisticsFlushIntervalError}
+                  />
+                </SectionGrid>
+              </SectionSubsection>
+
+              <SectionSubsection
+                title={t('config_management.visual.sections.observability.conversation_title')}
+                description={t('config_management.visual.sections.observability.conversation_desc')}
+              >
+                <SectionGrid>
+                  <ToggleRow
+                    title={t(
+                      'config_management.visual.sections.observability.conversation_enabled'
+                    )}
+                    checked={values.conversationLogEnabled}
+                    disabled={disabled}
+                    onChange={(conversationLogEnabled) =>
+                      onChange({ conversationLogEnabled })
+                    }
+                  />
+                  <Input
+                    label={t(
+                      'config_management.visual.sections.observability.conversation_directory'
+                    )}
+                    placeholder="conversation-logs"
+                    value={values.conversationLogDirectory}
+                    onChange={(e) => onChange({ conversationLogDirectory: e.target.value })}
+                    disabled={disabled}
+                  />
+                  <Input
+                    label={t(
+                      'config_management.visual.sections.observability.conversation_max_file_size'
+                    )}
+                    type="number"
+                    placeholder="16"
+                    value={values.conversationLogMaxFileSizeMb}
+                    onChange={(e) =>
+                      onChange({ conversationLogMaxFileSizeMb: e.target.value })
+                    }
+                    disabled={disabled}
+                    error={conversationLogMaxFileSizeError}
+                  />
+                  <Input
+                    label={t(
+                      'config_management.visual.sections.observability.conversation_max_total_size'
+                    )}
+                    type="number"
+                    placeholder="256"
+                    value={values.conversationLogMaxTotalSizeMb}
+                    onChange={(e) =>
+                      onChange({ conversationLogMaxTotalSizeMb: e.target.value })
+                    }
+                    disabled={disabled}
+                    error={conversationLogMaxTotalSizeError}
+                  />
+                  <Input
+                    label={t(
+                      'config_management.visual.sections.observability.conversation_max_entry_bytes'
+                    )}
+                    type="number"
+                    placeholder="2097152"
+                    value={values.conversationLogMaxEntryBytes}
+                    onChange={(e) =>
+                      onChange({ conversationLogMaxEntryBytes: e.target.value })
+                    }
+                    disabled={disabled}
+                    error={conversationLogMaxEntryBytesError}
+                  />
+                </SectionGrid>
+              </SectionSubsection>
+
+              <SectionSubsection
+                title={t('config_management.visual.sections.observability.preset_prompt_title')}
+                description={t(
+                  'config_management.visual.sections.observability.preset_prompt_desc'
+                )}
+              >
+                <SectionGrid>
+                  <ToggleRow
+                    title={t(
+                      'config_management.visual.sections.observability.preset_prompt_enabled'
+                    )}
+                    checked={values.presetPromptEnabled}
+                    disabled={disabled}
+                    onChange={(presetPromptEnabled) => onChange({ presetPromptEnabled })}
+                  />
+                  <Input
+                    label={t(
+                      'config_management.visual.sections.observability.preset_prompt_max_bytes'
+                    )}
+                    type="number"
+                    placeholder="32768"
+                    value={values.presetPromptMaxBytes}
+                    onChange={(e) => onChange({ presetPromptMaxBytes: e.target.value })}
+                    disabled={disabled}
+                    error={presetPromptMaxBytesError}
+                  />
+                </SectionGrid>
+                <YamlBlockField
+                  label={t('config_management.visual.sections.observability.preset_prompt')}
+                  value={values.presetPromptPrompt}
+                  placeholder={t(
+                    'config_management.visual.sections.observability.preset_prompt_placeholder'
+                  )}
+                  disabled={disabled}
+                  onChange={(presetPromptPrompt) => onChange({ presetPromptPrompt })}
+                />
+              </SectionSubsection>
             </SectionStack>
           </ConfigSection>
 
@@ -810,7 +1136,7 @@ export function VisualConfigEditor({
             ref={(node) => {
               sectionRefs.current.network = node;
             }}
-            indexLabel="06"
+            indexLabel="07"
             icon={<IconTrendingUp size={16} />}
             title={t('config_management.visual.sections.network.title')}
             description={t('config_management.visual.sections.network.description')}
@@ -888,6 +1214,28 @@ export function VisualConfigEditor({
                   onChange={(e) => onChange({ routingSessionAffinityTTL: e.target.value })}
                   disabled={disabled}
                 />
+                <Input
+                  label={t('config_management.visual.sections.network.upstream_concurrency_default')}
+                  type="number"
+                  placeholder="0"
+                  value={values.upstreamConcurrencyDefault}
+                  onChange={(e) => onChange({ upstreamConcurrencyDefault: e.target.value })}
+                  disabled={disabled}
+                  error={upstreamConcurrencyDefaultError}
+                />
+                <Input
+                  label={t(
+                    'config_management.visual.sections.network.upstream_concurrency_queue_timeout'
+                  )}
+                  type="number"
+                  placeholder="30"
+                  value={values.upstreamConcurrencyQueueTimeoutSeconds}
+                  onChange={(e) =>
+                    onChange({ upstreamConcurrencyQueueTimeoutSeconds: e.target.value })
+                  }
+                  disabled={disabled}
+                  error={upstreamConcurrencyQueueTimeoutError}
+                />
               </SectionGrid>
 
               <SectionGrid>
@@ -913,6 +1261,80 @@ export function VisualConfigEditor({
                   disabled={disabled}
                   onChange={(wsAuth) => onChange({ wsAuth })}
                 />
+                <ToggleRow
+                  title={t('config_management.visual.sections.network.passthrough_headers')}
+                  description={t(
+                    'config_management.visual.sections.network.passthrough_headers_desc'
+                  )}
+                  checked={values.passthroughHeaders}
+                  disabled={disabled}
+                  onChange={(passthroughHeaders) => onChange({ passthroughHeaders })}
+                />
+                <ToggleRow
+                  title={t('config_management.visual.sections.network.disable_cooling')}
+                  description={t('config_management.visual.sections.network.disable_cooling_desc')}
+                  checked={values.disableCooling}
+                  disabled={disabled}
+                  onChange={(disableCooling) => onChange({ disableCooling })}
+                />
+              </SectionGrid>
+
+              <SectionGrid>
+                <FieldShell
+                  label={t('config_management.visual.sections.network.disable_image_generation')}
+                  labelId={disableImageGenerationLabelId}
+                  hint={t(
+                    'config_management.visual.sections.network.disable_image_generation_hint'
+                  )}
+                  hintId={disableImageGenerationHintId}
+                >
+                  <Select
+                    value={values.disableImageGeneration}
+                    options={[
+                      {
+                        value: 'false',
+                        label: t(
+                          'config_management.visual.sections.network.image_generation_enabled'
+                        ),
+                      },
+                      {
+                        value: 'true',
+                        label: t(
+                          'config_management.visual.sections.network.image_generation_disabled'
+                        ),
+                      },
+                      {
+                        value: 'chat',
+                        label: t(
+                          'config_management.visual.sections.network.image_generation_chat_only'
+                        ),
+                      },
+                    ]}
+                    id={`${disableImageGenerationLabelId}-select`}
+                    disabled={disabled}
+                    ariaLabelledBy={disableImageGenerationLabelId}
+                    ariaDescribedBy={disableImageGenerationHintId}
+                    onChange={(nextValue) =>
+                      onChange({
+                        disableImageGeneration:
+                          nextValue as VisualConfigValues['disableImageGeneration'],
+                      })
+                    }
+                  />
+                </FieldShell>
+                <YamlBlockField
+                  label={t('config_management.visual.sections.network.upstream_concurrency_providers')}
+                  value={values.upstreamConcurrencyProvidersYaml}
+                  hint={t(
+                    'config_management.visual.sections.network.upstream_concurrency_providers_hint'
+                  )}
+                  placeholder="codex: 12"
+                  error={upstreamConcurrencyProvidersError}
+                  disabled={disabled}
+                  onChange={(upstreamConcurrencyProvidersYaml) =>
+                    onChange({ upstreamConcurrencyProvidersYaml })
+                  }
+                />
               </SectionGrid>
             </SectionStack>
           </ConfigSection>
@@ -922,7 +1344,7 @@ export function VisualConfigEditor({
             ref={(node) => {
               sectionRefs.current.quota = node;
             }}
-            indexLabel="07"
+            indexLabel="08"
             icon={<IconTimer size={16} />}
             title={t('config_management.visual.sections.quota.title')}
             description={t('config_management.visual.sections.quota.description')}
@@ -959,7 +1381,7 @@ export function VisualConfigEditor({
             ref={(node) => {
               sectionRefs.current.streaming = node;
             }}
-            indexLabel="08"
+            indexLabel="09"
             icon={<IconSatellite size={16} />}
             title={t('config_management.visual.sections.streaming.title')}
             description={t('config_management.visual.sections.streaming.description')}
@@ -1060,7 +1482,7 @@ export function VisualConfigEditor({
             ref={(node) => {
               sectionRefs.current.payload = node;
             }}
-            indexLabel="09"
+            indexLabel="10"
             icon={<IconCode size={16} />}
             title={t('config_management.visual.sections.payload.title')}
             description={t('config_management.visual.sections.payload.description')}

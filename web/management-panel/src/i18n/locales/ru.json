@@ -1107,6 +1107,8 @@
           "allow_remote_desc": "Разрешить управление с других хостов",
           "disable_panel": "Отключить панель",
           "disable_panel_desc": "Отключить встроенную веб-панель управления",
+          "disable_auto_update": "Отключить автообновление панели",
+          "disable_auto_update_desc": "Оставлять загруженную версию панели закреплённой",
           "secret_key": "Ключ управления",
           "secret_key_placeholder": "Задайте ключ управления",
           "panel_repo": "Репозиторий панели"
@@ -1115,7 +1117,10 @@
           "title": "Настройки аутентификации",
           "description": "API-ключи и каталог аутентификации",
           "auth_dir": "Каталог auth-dir",
-          "auth_dir_hint": "Путь к каталогу с файлами аутентификации (поддерживает ~)"
+          "auth_dir_hint": "Путь к каталогу с файлами аутентификации (поддерживает ~)",
+          "api_key_controls": "API Key controls (api-key-controls)",
+          "api_key_controls_hint": "YAML-массив для доступа к моделям, preset prompt и бюджетов по client key",
+          "api_key_controls_placeholder": "- name: spark-only\n  api-key: your-api-key\n  models:\n    - gpt-5.3-codex-spark*\n  unlimited: true"
         },
         "system": {
           "title": "Системные настройки",
@@ -1126,7 +1131,34 @@
           "commercial_mode_desc": "Отключить тяжёлое промежуточное ПО для поддержки высокой нагрузки",
           "logging_to_file": "Журналировать в файл",
           "logging_to_file_desc": "Сохранять журналы в файлы",
-          "logs_max_size": "Максимальный размер файла журнала (МБ)"
+          "logs_max_size": "Максимальный размер файла журнала (МБ)",
+          "pprof_enable": "Включить pprof",
+          "pprof_enable_desc": "Запустить pprof debug server",
+          "pprof_addr": "Адрес pprof"
+        },
+        "observability": {
+          "title": "Наблюдаемость",
+          "description": "Ошибки, usage persistence, conversation logs и preset prompt",
+          "error_logs_max_files": "Лимит файлов ошибок",
+          "redis_usage_queue_retention": "Хранение Redis usage queue (сек)",
+          "usage_title": "Статистика использования",
+          "usage_desc": "Собирать и сохранять метрики запросов",
+          "usage_enabled": "Включить статистику использования",
+          "usage_path": "Файл статистики",
+          "usage_flush_interval": "Интервал записи статистики (сек)",
+          "conversation_title": "Conversation Log",
+          "conversation_desc": "Сохранять полные тела запросов и ответов при явном включении",
+          "conversation_enabled": "Включить conversation log",
+          "conversation_directory": "Каталог conversation log",
+          "conversation_max_file_size": "Лимит файла conversation log (МБ)",
+          "conversation_max_total_size": "Общий лимит conversation log (МБ)",
+          "conversation_max_entry_bytes": "Лимит записи conversation log (bytes)",
+          "preset_prompt_title": "Preset Prompt",
+          "preset_prompt_desc": "Вставлять operator prompt в upstream chat-like запросы",
+          "preset_prompt_enabled": "Включить Preset Prompt",
+          "preset_prompt": "Текст Preset Prompt",
+          "preset_prompt_placeholder": "Operator prompt text",
+          "preset_prompt_max_bytes": "Лимит Preset Prompt (bytes)"
         },
         "network": {
           "title": "Сетевые настройки",
@@ -1145,7 +1177,20 @@
           "force_model_prefix_desc": "Запросы к моделям без префикса используют только учётные данные без префикса",
           "session_affinity": "Маршрутизация с привязкой к сессии",
           "ws_auth": "Аутентификация WebSocket",
-          "ws_auth_desc": "Включить аутентификацию WebSocket (/v1/ws)"
+          "ws_auth_desc": "Включить аутентификацию WebSocket (/v1/ws)",
+          "passthrough_headers": "Передавать response headers",
+          "passthrough_headers_desc": "Передавать отфильтрованные upstream response headers клиентам",
+          "disable_cooling": "Отключить cooling",
+          "disable_cooling_desc": "Отключить глобальное охлаждение auth/model",
+          "upstream_concurrency_default": "Default upstream concurrency",
+          "upstream_concurrency_queue_timeout": "Таймаут очереди concurrency (сек)",
+          "upstream_concurrency_providers": "Лимиты provider concurrency",
+          "upstream_concurrency_providers_hint": "YAML map по provider, например codex: 12",
+          "disable_image_generation": "Режим image generation",
+          "disable_image_generation_hint": "Выберите, как выставлять image_generation",
+          "image_generation_enabled": "Включено",
+          "image_generation_disabled": "Отключено везде",
+          "image_generation_chat_only": "Отключено только в chat"
         },
         "quota": {
           "title": "Резерв по квоте",
@@ -1236,6 +1281,9 @@
         "validation_blocked": "Исправьте ошибки валидации перед сохранением",
         "port_range": "Введите корректный порт от 1 до 65535",
         "non_negative_integer": "Введите неотрицательное целое число",
+        "invalid_yaml": "Введите корректный YAML",
+        "yaml_array": "Введите YAML-массив",
+        "yaml_map": "Введите YAML-map",
         "payload_invalid_number": "Введите корректное число",
         "payload_invalid_boolean": "Выберите true или false",
         "payload_invalid_json": "Введите корректный JSON"
@@ -1280,7 +1328,7 @@
     "total_tokens": "Всего Tokens",
     "cached_tokens": "Cached Tokens",
     "estimated_cost": "Оценка стоимости",
-    "pricing_source": "Оценка по стандартным ценам OpenAI на {{date}}, единица {{unit}}; Spark временно использует оценку GPT-5.3-Codex на период preview",
+    "pricing_source": "Оценка по стандартным ценам OpenAI на {{date}}, единица {{unit}}; Spark использует локальную preview-оценку: $0.01 input, $0 cached input и $0.01 output за 1M tokens",
     "priced_requests": "Запросов с ценой: {{count}}",
     "average_value": "Среднее значение",
     "total_throughput": "Общая пропускная способность",

@@ -122,3 +122,32 @@ func TestAPIKeyControl_BlocksEstimatedCostAtLimit(t *testing.T) {
 		t.Fatal("withinAPIKeyBudget() = true, want false at estimated cost limit")
 	}
 }
+
+func TestAPIKeyControl_CodexSparkUsesPreviewBudgetPrice(t *testing.T) {
+	for _, model := range []string{
+		"gpt-5.3-codex-spark",
+		"gpt-5.3-codex-spark-low",
+		"gpt-5.3-codex-spark-medium",
+		"gpt-5.3-codex-spark-high",
+		"gpt-5.3-codex-spark-xhigh",
+	} {
+		t.Run(model, func(t *testing.T) {
+			price, ok := priceForAPIKeyModel(model)
+			if !ok {
+				t.Fatalf("priceForAPIKeyModel(%q) missing", model)
+			}
+			if price.input != 0.01 || price.cachedInput != 0 || price.output != 0.01 {
+				t.Fatalf("price = input %.4f cached %.4f output %.4f, want 0.01/0/0.01", price.input, price.cachedInput, price.output)
+			}
+			got := estimateTokenStatsCostUSD(usage.TokenStats{
+				InputTokens:  1_000_000,
+				CachedTokens: 500_000,
+				OutputTokens: 1_000_000,
+				TotalTokens:  2_000_000,
+			}, price)
+			if got != 0.015 {
+				t.Fatalf("estimated cost = %.6f, want 0.015000", got)
+			}
+		})
+	}
+}

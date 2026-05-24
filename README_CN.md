@@ -116,7 +116,7 @@ gpt-5.3-codex-spark(high)
 
 ## Codex Spark 定价
 
-PPAP 已把 `gpt-5.3-codex-spark` 加入本地 usage 成本估算。官方 preview 定价稳定前，暂时沿用 `gpt-5.3-codex` 估算价。
+PPAP 已把 `gpt-5.3-codex-spark` 加入本地 usage 成本估算。当前按每 1M tokens 输入 $0.01、缓存输入 $0、输出 $0.01 估算。
 
 参考：
 

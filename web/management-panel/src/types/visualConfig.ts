@@ -6,15 +6,32 @@ export type PayloadParamValidationErrorCode =
 
 export type VisualConfigFieldPath =
   | 'port'
+  | 'apiKeyControlsYaml'
+  | 'pprofAddr'
   | 'logsMaxTotalSizeMb'
+  | 'errorLogsMaxFiles'
+  | 'usageStatisticsFlushIntervalSeconds'
+  | 'conversationLogMaxFileSizeMb'
+  | 'conversationLogMaxTotalSizeMb'
+  | 'conversationLogMaxEntryBytes'
+  | 'presetPromptMaxBytes'
+  | 'redisUsageQueueRetentionSeconds'
   | 'requestRetry'
   | 'maxRetryCredentials'
   | 'maxRetryInterval'
+  | 'upstreamConcurrencyDefault'
+  | 'upstreamConcurrencyProvidersYaml'
+  | 'upstreamConcurrencyQueueTimeoutSeconds'
   | 'streaming.keepaliveSeconds'
   | 'streaming.bootstrapRetries'
   | 'streaming.nonstreamKeepaliveInterval';
 
-export type VisualConfigValidationErrorCode = 'port_range' | 'non_negative_integer';
+export type VisualConfigValidationErrorCode =
+  | 'port_range'
+  | 'non_negative_integer'
+  | 'invalid_yaml'
+  | 'yaml_array'
+  | 'yaml_map';
 
 export type VisualConfigValidationErrors = Partial<
   Record<VisualConfigFieldPath, VisualConfigValidationErrorCode>
@@ -51,6 +68,8 @@ export interface StreamingConfig {
   nonstreamKeepaliveInterval: string;
 }
 
+export type DisableImageGenerationModeValue = 'false' | 'true' | 'chat';
+
 export type VisualConfigValues = {
   host: string;
   port: string;
@@ -60,18 +79,41 @@ export type VisualConfigValues = {
   rmAllowRemote: boolean;
   rmSecretKey: string;
   rmDisableControlPanel: boolean;
+  rmDisableAutoUpdatePanel: boolean;
   rmPanelRepo: string;
   authDir: string;
   apiKeysText: string;
+  apiKeyControlsYaml: string;
   debug: boolean;
+  pprofEnable: boolean;
+  pprofAddr: string;
   commercialMode: boolean;
   loggingToFile: boolean;
   logsMaxTotalSizeMb: string;
+  errorLogsMaxFiles: string;
+  usageStatisticsEnabled: boolean;
+  usageStatisticsPath: string;
+  usageStatisticsFlushIntervalSeconds: string;
+  conversationLogEnabled: boolean;
+  conversationLogDirectory: string;
+  conversationLogMaxFileSizeMb: string;
+  conversationLogMaxTotalSizeMb: string;
+  conversationLogMaxEntryBytes: string;
+  presetPromptEnabled: boolean;
+  presetPromptPrompt: string;
+  presetPromptMaxBytes: string;
+  redisUsageQueueRetentionSeconds: string;
   proxyUrl: string;
   forceModelPrefix: boolean;
+  passthroughHeaders: boolean;
   requestRetry: string;
   maxRetryCredentials: string;
   maxRetryInterval: string;
+  disableCooling: boolean;
+  upstreamConcurrencyDefault: string;
+  upstreamConcurrencyProvidersYaml: string;
+  upstreamConcurrencyQueueTimeoutSeconds: string;
+  disableImageGeneration: DisableImageGenerationModeValue;
   quotaSwitchProject: boolean;
   quotaSwitchPreviewModel: boolean;
   quotaAntigravityCredits: boolean;
@@ -101,18 +143,41 @@ export const DEFAULT_VISUAL_VALUES: VisualConfigValues = {
   rmAllowRemote: false,
   rmSecretKey: '',
   rmDisableControlPanel: false,
+  rmDisableAutoUpdatePanel: false,
   rmPanelRepo: '',
   authDir: '',
   apiKeysText: '',
+  apiKeyControlsYaml: '',
   debug: false,
+  pprofEnable: false,
+  pprofAddr: '',
   commercialMode: false,
   loggingToFile: false,
   logsMaxTotalSizeMb: '',
+  errorLogsMaxFiles: '',
+  usageStatisticsEnabled: false,
+  usageStatisticsPath: '',
+  usageStatisticsFlushIntervalSeconds: '',
+  conversationLogEnabled: false,
+  conversationLogDirectory: '',
+  conversationLogMaxFileSizeMb: '',
+  conversationLogMaxTotalSizeMb: '',
+  conversationLogMaxEntryBytes: '',
+  presetPromptEnabled: false,
+  presetPromptPrompt: '',
+  presetPromptMaxBytes: '',
+  redisUsageQueueRetentionSeconds: '',
   proxyUrl: '',
   forceModelPrefix: false,
+  passthroughHeaders: false,
   requestRetry: '',
   maxRetryCredentials: '',
   maxRetryInterval: '',
+  disableCooling: false,
+  upstreamConcurrencyDefault: '',
+  upstreamConcurrencyProvidersYaml: '',
+  upstreamConcurrencyQueueTimeoutSeconds: '',
+  disableImageGeneration: 'false',
   quotaSwitchProject: true,
   quotaSwitchPreviewModel: true,
   quotaAntigravityCredits: false,

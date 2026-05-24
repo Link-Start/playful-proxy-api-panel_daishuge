@@ -115,7 +115,7 @@ gpt-5.3-codex-spark(high)
 
 ## Codex Spark Pricing
 
-`gpt-5.3-codex-spark` is included in PPAP pricing data for local usage-cost estimation. Until official preview pricing settles, PPAP temporarily estimates it with the `gpt-5.3-codex` rate.
+`gpt-5.3-codex-spark` is included in PPAP pricing data for local usage-cost estimation. PPAP currently estimates it at $0.01 input, $0 cached input, and $0.01 output per 1M tokens.
 
 References:
 

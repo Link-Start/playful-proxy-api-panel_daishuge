@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useReducer } from 'react';
-import { isMap, parse as parseYaml, parseDocument } from 'yaml';
+import { isMap, parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
 import type {
   PayloadFilterRule,
   PayloadParamEntry,
@@ -84,6 +84,15 @@ function deleteIfMapEmpty(doc: YamlDocument, path: YamlPath): void {
   if (value.items.length === 0) doc.deleteIn(path);
 }
 
+function yamlBlockFromValue(raw: unknown): string {
+  if (raw === undefined || raw === null) return '';
+  try {
+    return stringifyYaml(raw).trimEnd();
+  } catch {
+    return '';
+  }
+}
+
 function setBooleanInDoc(doc: YamlDocument, path: YamlPath, value: boolean): void {
   if (value) {
     doc.setIn(path, true);
@@ -102,6 +111,18 @@ function shouldWriteManagedField(
   // Only materialize them when the YAML already had the key or the user changed that field.
   // Use this guard for future optional visual-editor fields instead of unconditional `setIn`.
   return docHas(doc, path) || dirtyFields.has(dirtyKey);
+}
+
+function setManagedBooleanInDoc(
+  doc: YamlDocument,
+  path: YamlPath,
+  value: boolean,
+  dirtyFields: Set<string>,
+  dirtyKey: string
+): void {
+  if (value || shouldWriteManagedField(doc, path, dirtyFields, dirtyKey)) {
+    doc.setIn(path, value);
+  }
 }
 
 function setStringInDoc(doc: YamlDocument, path: YamlPath, value: unknown): void {
@@ -137,6 +158,30 @@ function setIntFromStringInDoc(doc: YamlDocument, path: YamlPath, value: unknown
   }
 }
 
+function setYamlBlockInDoc(
+  doc: YamlDocument,
+  path: YamlPath,
+  value: string,
+  dirtyFields: Set<string>,
+  dirtyKey: string,
+  emptyValue: unknown
+): void {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    if (docHas(doc, path) || dirtyFields.has(dirtyKey)) {
+      if (emptyValue === undefined) {
+        doc.deleteIn(path);
+      } else {
+        doc.setIn(path, emptyValue);
+      }
+    }
+    return;
+  }
+
+  const parsed = parseYaml(trimmed);
+  doc.setIn(path, parsed ?? emptyValue);
+}
+
 function getNonNegativeIntegerError(value: string): 'non_negative_integer' | undefined {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
@@ -152,15 +197,66 @@ function getPortError(value: string): 'port_range' | undefined {
   return parsed >= 1 && parsed <= 65535 ? undefined : 'port_range';
 }
 
+function getYamlArrayError(value: string): 'invalid_yaml' | 'yaml_array' | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  try {
+    return Array.isArray(parseYaml(trimmed)) ? undefined : 'yaml_array';
+  } catch {
+    return 'invalid_yaml';
+  }
+}
+
+function getYamlMapError(value: string): 'invalid_yaml' | 'yaml_map' | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  try {
+    const parsed = parseYaml(trimmed);
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? undefined
+      : 'yaml_map';
+  } catch {
+    return 'invalid_yaml';
+  }
+}
+
+function parseDisableImageGeneration(raw: unknown): VisualConfigValues['disableImageGeneration'] {
+  if (raw === true) return 'true';
+  if (raw === 'chat') return 'chat';
+  return 'false';
+}
+
 export function getVisualConfigValidationErrors(
   values: VisualConfigValues
 ): VisualConfigValidationErrors {
   return {
     port: getPortError(values.port),
+    apiKeyControlsYaml: getYamlArrayError(values.apiKeyControlsYaml),
+    pprofAddr: undefined,
     logsMaxTotalSizeMb: getNonNegativeIntegerError(values.logsMaxTotalSizeMb),
+    errorLogsMaxFiles: getNonNegativeIntegerError(values.errorLogsMaxFiles),
+    usageStatisticsFlushIntervalSeconds: getNonNegativeIntegerError(
+      values.usageStatisticsFlushIntervalSeconds
+    ),
+    conversationLogMaxFileSizeMb: getNonNegativeIntegerError(
+      values.conversationLogMaxFileSizeMb
+    ),
+    conversationLogMaxTotalSizeMb: getNonNegativeIntegerError(
+      values.conversationLogMaxTotalSizeMb
+    ),
+    conversationLogMaxEntryBytes: getNonNegativeIntegerError(values.conversationLogMaxEntryBytes),
+    presetPromptMaxBytes: getNonNegativeIntegerError(values.presetPromptMaxBytes),
+    redisUsageQueueRetentionSeconds: getNonNegativeIntegerError(
+      values.redisUsageQueueRetentionSeconds
+    ),
     requestRetry: getNonNegativeIntegerError(values.requestRetry),
     maxRetryCredentials: getNonNegativeIntegerError(values.maxRetryCredentials),
     maxRetryInterval: getNonNegativeIntegerError(values.maxRetryInterval),
+    upstreamConcurrencyDefault: getNonNegativeIntegerError(values.upstreamConcurrencyDefault),
+    upstreamConcurrencyProvidersYaml: getYamlMapError(values.upstreamConcurrencyProvidersYaml),
+    upstreamConcurrencyQueueTimeoutSeconds: getNonNegativeIntegerError(
+      values.upstreamConcurrencyQueueTimeoutSeconds
+    ),
     'streaming.keepaliveSeconds': getNonNegativeIntegerError(values.streaming.keepaliveSeconds),
     'streaming.bootstrapRetries': getNonNegativeIntegerError(values.streaming.bootstrapRetries),
     'streaming.nonstreamKeepaliveInterval': getNonNegativeIntegerError(
@@ -563,6 +659,38 @@ function getNextDirtyFields(
     }
   };
 
+  const comparableTopLevelKeys = [
+    'rmDisableAutoUpdatePanel',
+    'apiKeyControlsYaml',
+    'pprofEnable',
+    'pprofAddr',
+    'errorLogsMaxFiles',
+    'usageStatisticsEnabled',
+    'usageStatisticsPath',
+    'usageStatisticsFlushIntervalSeconds',
+    'conversationLogEnabled',
+    'conversationLogDirectory',
+    'conversationLogMaxFileSizeMb',
+    'conversationLogMaxTotalSizeMb',
+    'conversationLogMaxEntryBytes',
+    'presetPromptEnabled',
+    'presetPromptPrompt',
+    'presetPromptMaxBytes',
+    'redisUsageQueueRetentionSeconds',
+    'passthroughHeaders',
+    'disableCooling',
+    'upstreamConcurrencyDefault',
+    'upstreamConcurrencyProvidersYaml',
+    'upstreamConcurrencyQueueTimeoutSeconds',
+    'disableImageGeneration',
+  ] as const;
+
+  for (const key of comparableTopLevelKeys) {
+    if (Object.prototype.hasOwnProperty.call(patch, key)) {
+      updateDirty(key, nextValues[key] === baselineValues[key]);
+    }
+  }
+
   if (Object.prototype.hasOwnProperty.call(patch, 'host')) {
     updateDirty('host', nextValues.host === baselineValues.host);
   }
@@ -807,8 +935,12 @@ export function useVisualConfig() {
       const parsed = asRecord(parsedRaw) ?? {};
       const tls = asRecord(parsed.tls);
       const remoteManagement = asRecord(parsed['remote-management']);
+      const pprof = asRecord(parsed.pprof);
+      const conversationLog = asRecord(parsed['conversation-log']);
+      const presetPrompt = asRecord(parsed['preset-prompt']);
       const quotaExceeded = asRecord(parsed['quota-exceeded']);
       const routing = asRecord(parsed.routing);
+      const upstreamConcurrency = asRecord(parsed['upstream-concurrency']);
       const payload = asRecord(parsed.payload);
       const streaming = asRecord(parsed.streaming);
 
@@ -826,6 +958,7 @@ export function useVisualConfig() {
             ? remoteManagement['secret-key']
             : '',
         rmDisableControlPanel: Boolean(remoteManagement?.['disable-control-panel']),
+        rmDisableAutoUpdatePanel: Boolean(remoteManagement?.['disable-auto-update-panel']),
         rmPanelRepo:
           typeof remoteManagement?.['panel-github-repository'] === 'string'
             ? remoteManagement['panel-github-repository']
@@ -835,17 +968,49 @@ export function useVisualConfig() {
 
         authDir: typeof parsed['auth-dir'] === 'string' ? parsed['auth-dir'] : '',
         apiKeysText: resolveApiKeysText(parsed),
+        apiKeyControlsYaml: yamlBlockFromValue(parsed['api-key-controls']),
 
         debug: Boolean(parsed.debug),
+        pprofEnable: Boolean(pprof?.enable),
+        pprofAddr: typeof pprof?.addr === 'string' ? pprof.addr : '',
         commercialMode: Boolean(parsed['commercial-mode']),
         loggingToFile: Boolean(parsed['logging-to-file']),
         logsMaxTotalSizeMb: String(parsed['logs-max-total-size-mb'] ?? ''),
+        errorLogsMaxFiles: String(parsed['error-logs-max-files'] ?? ''),
+        usageStatisticsEnabled: Boolean(parsed['usage-statistics-enabled']),
+        usageStatisticsPath:
+          typeof parsed['usage-statistics-path'] === 'string'
+            ? parsed['usage-statistics-path']
+            : '',
+        usageStatisticsFlushIntervalSeconds: String(
+          parsed['usage-statistics-flush-interval-seconds'] ?? ''
+        ),
+        conversationLogEnabled: Boolean(conversationLog?.enabled),
+        conversationLogDirectory:
+          typeof conversationLog?.directory === 'string' ? conversationLog.directory : '',
+        conversationLogMaxFileSizeMb: String(conversationLog?.['max-file-size-mb'] ?? ''),
+        conversationLogMaxTotalSizeMb: String(conversationLog?.['max-total-size-mb'] ?? ''),
+        conversationLogMaxEntryBytes: String(conversationLog?.['max-entry-bytes'] ?? ''),
+        presetPromptEnabled: Boolean(presetPrompt?.enabled),
+        presetPromptPrompt: typeof presetPrompt?.prompt === 'string' ? presetPrompt.prompt : '',
+        presetPromptMaxBytes: String(presetPrompt?.['max-bytes'] ?? ''),
+        redisUsageQueueRetentionSeconds: String(
+          parsed['redis-usage-queue-retention-seconds'] ?? ''
+        ),
 
         proxyUrl: typeof parsed['proxy-url'] === 'string' ? parsed['proxy-url'] : '',
         forceModelPrefix: Boolean(parsed['force-model-prefix']),
+        passthroughHeaders: Boolean(parsed['passthrough-headers']),
         requestRetry: String(parsed['request-retry'] ?? ''),
         maxRetryCredentials: String(parsed['max-retry-credentials'] ?? ''),
         maxRetryInterval: String(parsed['max-retry-interval'] ?? ''),
+        disableCooling: Boolean(parsed['disable-cooling']),
+        upstreamConcurrencyDefault: String(upstreamConcurrency?.default ?? ''),
+        upstreamConcurrencyProvidersYaml: yamlBlockFromValue(upstreamConcurrency?.providers),
+        upstreamConcurrencyQueueTimeoutSeconds: String(
+          upstreamConcurrency?.['queue-timeout-seconds'] ?? ''
+        ),
+        disableImageGeneration: parseDisableImageGeneration(parsed['disable-image-generation']),
         wsAuth: Boolean(parsed['ws-auth']),
 
         quotaSwitchProject: Boolean(quotaExceeded?.['switch-project'] ?? true),
@@ -920,6 +1085,13 @@ export function useVisualConfig() {
           values.rmAllowRemote ||
           values.rmSecretKey.trim() ||
           values.rmDisableControlPanel ||
+          values.rmDisableAutoUpdatePanel ||
+          shouldWriteManagedField(
+            doc,
+            ['remote-management', 'disable-auto-update-panel'],
+            dirtyFields,
+            'rmDisableAutoUpdatePanel'
+          ) ||
           values.rmPanelRepo.trim()
         ) {
           ensureMapInDoc(doc, ['remote-management']);
@@ -929,6 +1101,13 @@ export function useVisualConfig() {
             doc,
             ['remote-management', 'disable-control-panel'],
             values.rmDisableControlPanel
+          );
+          setManagedBooleanInDoc(
+            doc,
+            ['remote-management', 'disable-auto-update-panel'],
+            values.rmDisableAutoUpdatePanel,
+            dirtyFields,
+            'rmDisableAutoUpdatePanel'
           );
           setStringInDoc(doc, ['remote-management', 'panel-github-repository'], values.rmPanelRepo);
           if (docHas(doc, ['remote-management', 'panel-repo'])) {
@@ -948,18 +1127,188 @@ export function useVisualConfig() {
           doc.deleteIn(['api-keys']);
         }
         deleteLegacyApiKeysProvider(doc);
+        if (
+          docHas(doc, ['api-key-controls']) ||
+          dirtyFields.has('apiKeyControlsYaml') ||
+          values.apiKeyControlsYaml.trim()
+        ) {
+          setYamlBlockInDoc(
+            doc,
+            ['api-key-controls'],
+            values.apiKeyControlsYaml,
+            dirtyFields,
+            'apiKeyControlsYaml',
+            undefined
+          );
+        }
 
         setBooleanInDoc(doc, ['debug'], values.debug);
+
+        if (
+          docHas(doc, ['pprof']) ||
+          values.pprofEnable ||
+          values.pprofAddr.trim() ||
+          dirtyFields.has('pprofEnable') ||
+          dirtyFields.has('pprofAddr')
+        ) {
+          ensureMapInDoc(doc, ['pprof']);
+          setManagedBooleanInDoc(doc, ['pprof', 'enable'], values.pprofEnable, dirtyFields, 'pprofEnable');
+          setStringInDoc(doc, ['pprof', 'addr'], values.pprofAddr);
+          deleteIfMapEmpty(doc, ['pprof']);
+        }
 
         setBooleanInDoc(doc, ['commercial-mode'], values.commercialMode);
         setBooleanInDoc(doc, ['logging-to-file'], values.loggingToFile);
         setIntFromStringInDoc(doc, ['logs-max-total-size-mb'], values.logsMaxTotalSizeMb);
+        setIntFromStringInDoc(doc, ['error-logs-max-files'], values.errorLogsMaxFiles);
+
+        setManagedBooleanInDoc(
+          doc,
+          ['usage-statistics-enabled'],
+          values.usageStatisticsEnabled,
+          dirtyFields,
+          'usageStatisticsEnabled'
+        );
+        setStringInDoc(doc, ['usage-statistics-path'], values.usageStatisticsPath);
+        setIntFromStringInDoc(
+          doc,
+          ['usage-statistics-flush-interval-seconds'],
+          values.usageStatisticsFlushIntervalSeconds
+        );
+
+        if (
+          docHas(doc, ['conversation-log']) ||
+          values.conversationLogEnabled ||
+          values.conversationLogDirectory.trim() ||
+          values.conversationLogMaxFileSizeMb.trim() ||
+          values.conversationLogMaxTotalSizeMb.trim() ||
+          values.conversationLogMaxEntryBytes.trim() ||
+          dirtyFields.has('conversationLogEnabled') ||
+          dirtyFields.has('conversationLogDirectory') ||
+          dirtyFields.has('conversationLogMaxFileSizeMb') ||
+          dirtyFields.has('conversationLogMaxTotalSizeMb') ||
+          dirtyFields.has('conversationLogMaxEntryBytes')
+        ) {
+          ensureMapInDoc(doc, ['conversation-log']);
+          setManagedBooleanInDoc(
+            doc,
+            ['conversation-log', 'enabled'],
+            values.conversationLogEnabled,
+            dirtyFields,
+            'conversationLogEnabled'
+          );
+          setStringInDoc(doc, ['conversation-log', 'directory'], values.conversationLogDirectory);
+          setIntFromStringInDoc(
+            doc,
+            ['conversation-log', 'max-file-size-mb'],
+            values.conversationLogMaxFileSizeMb
+          );
+          setIntFromStringInDoc(
+            doc,
+            ['conversation-log', 'max-total-size-mb'],
+            values.conversationLogMaxTotalSizeMb
+          );
+          setIntFromStringInDoc(
+            doc,
+            ['conversation-log', 'max-entry-bytes'],
+            values.conversationLogMaxEntryBytes
+          );
+          deleteIfMapEmpty(doc, ['conversation-log']);
+        }
+
+        if (
+          docHas(doc, ['preset-prompt']) ||
+          values.presetPromptEnabled ||
+          values.presetPromptPrompt.trim() ||
+          values.presetPromptMaxBytes.trim() ||
+          dirtyFields.has('presetPromptEnabled') ||
+          dirtyFields.has('presetPromptPrompt') ||
+          dirtyFields.has('presetPromptMaxBytes')
+        ) {
+          ensureMapInDoc(doc, ['preset-prompt']);
+          setManagedBooleanInDoc(
+            doc,
+            ['preset-prompt', 'enabled'],
+            values.presetPromptEnabled,
+            dirtyFields,
+            'presetPromptEnabled'
+          );
+          setStringInDoc(doc, ['preset-prompt', 'prompt'], values.presetPromptPrompt);
+          setIntFromStringInDoc(doc, ['preset-prompt', 'max-bytes'], values.presetPromptMaxBytes);
+          deleteIfMapEmpty(doc, ['preset-prompt']);
+        }
+
+        setIntFromStringInDoc(
+          doc,
+          ['redis-usage-queue-retention-seconds'],
+          values.redisUsageQueueRetentionSeconds
+        );
 
         setStringInDoc(doc, ['proxy-url'], values.proxyUrl);
         setBooleanInDoc(doc, ['force-model-prefix'], values.forceModelPrefix);
+        setManagedBooleanInDoc(
+          doc,
+          ['passthrough-headers'],
+          values.passthroughHeaders,
+          dirtyFields,
+          'passthroughHeaders'
+        );
         setIntFromStringInDoc(doc, ['request-retry'], values.requestRetry);
         setIntFromStringInDoc(doc, ['max-retry-credentials'], values.maxRetryCredentials);
         setIntFromStringInDoc(doc, ['max-retry-interval'], values.maxRetryInterval);
+        setManagedBooleanInDoc(
+          doc,
+          ['disable-cooling'],
+          values.disableCooling,
+          dirtyFields,
+          'disableCooling'
+        );
+        if (
+          docHas(doc, ['upstream-concurrency']) ||
+          values.upstreamConcurrencyDefault.trim() ||
+          values.upstreamConcurrencyProvidersYaml.trim() ||
+          values.upstreamConcurrencyQueueTimeoutSeconds.trim() ||
+          dirtyFields.has('upstreamConcurrencyDefault') ||
+          dirtyFields.has('upstreamConcurrencyProvidersYaml') ||
+          dirtyFields.has('upstreamConcurrencyQueueTimeoutSeconds')
+        ) {
+          ensureMapInDoc(doc, ['upstream-concurrency']);
+          setIntFromStringInDoc(
+            doc,
+            ['upstream-concurrency', 'default'],
+            values.upstreamConcurrencyDefault
+          );
+          setYamlBlockInDoc(
+            doc,
+            ['upstream-concurrency', 'providers'],
+            values.upstreamConcurrencyProvidersYaml,
+            dirtyFields,
+            'upstreamConcurrencyProvidersYaml',
+            {}
+          );
+          setIntFromStringInDoc(
+            doc,
+            ['upstream-concurrency', 'queue-timeout-seconds'],
+            values.upstreamConcurrencyQueueTimeoutSeconds
+          );
+          deleteIfMapEmpty(doc, ['upstream-concurrency']);
+        }
+        if (
+          values.disableImageGeneration !== 'false' ||
+          shouldWriteManagedField(
+            doc,
+            ['disable-image-generation'],
+            dirtyFields,
+            'disableImageGeneration'
+          )
+        ) {
+          doc.setIn(
+            ['disable-image-generation'],
+            values.disableImageGeneration === 'chat'
+              ? 'chat'
+              : values.disableImageGeneration === 'true'
+          );
+        }
         setBooleanInDoc(doc, ['ws-auth'], values.wsAuth);
 
         if (

@@ -660,6 +660,15 @@
   line-height: 1.6;
 }
 
+.yamlBlockInput {
+  min-height: 148px;
+  resize: vertical;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  line-height: 1.5;
+}
+
 .inlinePill {
   position: absolute;
   right: 10px;
