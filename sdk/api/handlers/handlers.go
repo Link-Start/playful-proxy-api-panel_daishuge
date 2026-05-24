@@ -319,6 +319,7 @@ type BaseAPIHandler struct {
 
 	presetPromptMu     sync.RWMutex
 	presetPromptConfig config.PresetPromptConfig
+	apiKeyControls     []config.APIKeyControl
 
 	conversationLogMu    sync.RWMutex
 	conversationLogStore *conversationlog.Store
@@ -563,7 +564,7 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
 	reasoningEffort := setReasoningEffortMetadata(reqMeta, handlerType, normalizedModel, rawJSON)
 	ctx = coreusage.WithReasoningEffort(ctx, reasoningEffort)
-	payload := h.applyPresetPromptToPayload(handlerType, rawJSON)
+	payload := h.applyPresetPromptToPayloadForAPIKey(handlerType, rawJSON, apiKeyFromRequestContext(ctx))
 	if len(payload) == 0 {
 		payload = nil
 	}
@@ -675,7 +676,7 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
 	reasoningEffort := setReasoningEffortMetadata(reqMeta, handlerType, normalizedModel, rawJSON)
 	ctx = coreusage.WithReasoningEffort(ctx, reasoningEffort)
-	payload := h.applyPresetPromptToPayload(handlerType, rawJSON)
+	payload := h.applyPresetPromptToPayloadForAPIKey(handlerType, rawJSON, apiKeyFromRequestContext(ctx))
 	if len(payload) == 0 {
 		payload = nil
 	}

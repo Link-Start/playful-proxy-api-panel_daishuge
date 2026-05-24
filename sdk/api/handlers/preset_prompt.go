@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
@@ -22,13 +23,35 @@ func (h *BaseAPIHandler) SetPresetPromptConfig(cfg config.PresetPromptConfig) {
 	h.presetPromptMu.Unlock()
 }
 
+// SetAPIKeyControls updates per-client-key request-time controls used by handlers.
+func (h *BaseAPIHandler) SetAPIKeyControls(controls []config.APIKeyControl) {
+	if h == nil {
+		return
+	}
+	cloned := cloneAPIKeyControls(controls)
+	h.presetPromptMu.Lock()
+	h.apiKeyControls = cloned
+	h.presetPromptMu.Unlock()
+}
+
 func (h *BaseAPIHandler) activePresetPrompt() (string, bool) {
+	return h.activePresetPromptForAPIKey("")
+}
+
+func (h *BaseAPIHandler) activePresetPromptForAPIKey(apiKey string) (string, bool) {
 	if h == nil {
 		return "", false
 	}
 	h.presetPromptMu.RLock()
 	cfg := h.presetPromptConfig
+	if control := findPresetPromptAPIKeyControl(h.apiKeyControls, apiKey); control != nil && control.PresetPrompt != nil {
+		cfg = *control.PresetPrompt
+	}
 	h.presetPromptMu.RUnlock()
+	return activePresetPromptFromConfig(cfg)
+}
+
+func activePresetPromptFromConfig(cfg config.PresetPromptConfig) (string, bool) {
 	if !cfg.Enabled || strings.TrimSpace(cfg.Prompt) == "" {
 		return "", false
 	}
@@ -46,7 +69,11 @@ func (h *BaseAPIHandler) activePresetPrompt() (string, bool) {
 }
 
 func (h *BaseAPIHandler) applyPresetPromptToPayload(handlerType string, rawJSON []byte) []byte {
-	prompt, ok := h.activePresetPrompt()
+	return h.applyPresetPromptToPayloadForAPIKey(handlerType, rawJSON, "")
+}
+
+func (h *BaseAPIHandler) applyPresetPromptToPayloadForAPIKey(handlerType string, rawJSON []byte, apiKey string) []byte {
+	prompt, ok := h.activePresetPromptForAPIKey(apiKey)
 	if !ok || len(rawJSON) == 0 || !json.Valid(rawJSON) {
 		return rawJSON
 	}
@@ -63,6 +90,50 @@ func (h *BaseAPIHandler) applyPresetPromptToPayload(handlerType string, rawJSON 
 	default:
 		return rawJSON
 	}
+}
+
+func apiKeyFromRequestContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	getter, ok := ctx.Value("gin").(interface{ GetString(string) string })
+	if !ok || getter == nil {
+		return ""
+	}
+	return strings.TrimSpace(getter.GetString("apiKey"))
+}
+
+func cloneAPIKeyControls(controls []config.APIKeyControl) []config.APIKeyControl {
+	if len(controls) == 0 {
+		return nil
+	}
+	out := make([]config.APIKeyControl, len(controls))
+	for i := range controls {
+		out[i] = controls[i]
+		if controls[i].PresetPrompt != nil {
+			cfg := *controls[i].PresetPrompt
+			cfg.Normalize()
+			out[i].PresetPrompt = &cfg
+		}
+	}
+	return out
+}
+
+func findPresetPromptAPIKeyControl(controls []config.APIKeyControl, apiKey string) *config.APIKeyControl {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return nil
+	}
+	for i := range controls {
+		key := strings.TrimSpace(controls[i].APIKey)
+		if key == "" {
+			key = strings.TrimSpace(controls[i].Key)
+		}
+		if key == apiKey {
+			return &controls[i]
+		}
+	}
+	return nil
 }
 
 func injectPresetPromptIntoOpenAIChat(rawJSON []byte, prompt string) []byte {

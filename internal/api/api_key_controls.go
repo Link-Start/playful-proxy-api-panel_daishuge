@@ -77,7 +77,7 @@ func withinAPIKeyBudget(control *config.APIKeyControl, stats *usage.RequestStati
 	if control == nil || control.Unlimited {
 		return true
 	}
-	if control.MaxRequests <= 0 && control.MaxInputTokens <= 0 && control.MaxTotalTokens <= 0 {
+	if control.MaxRequests <= 0 && control.MaxInputTokens <= 0 && control.MaxTotalTokens <= 0 && control.MaxCostUSD <= 0 {
 		return true
 	}
 	if stats == nil {
@@ -104,7 +104,98 @@ func withinAPIKeyBudget(control *config.APIKeyControl, stats *usage.RequestStati
 	if control.MaxTotalTokens > 0 && apiStats.TotalTokens >= control.MaxTotalTokens {
 		return false
 	}
+	if control.MaxCostUSD > 0 && estimateAPIKeyCostUSD(apiStats) >= control.MaxCostUSD {
+		return false
+	}
 	return true
+}
+
+type apiKeyModelPrice struct {
+	input       float64
+	cachedInput float64
+	output      float64
+}
+
+var apiKeyGPTModelPrices = map[string]apiKeyModelPrice{
+	"gpt-5.5":                    {input: 5, cachedInput: 0.5, output: 30},
+	"gpt-5.5-low-fast":           {input: 5, cachedInput: 0.5, output: 30},
+	"gpt-5.5-medium-fast":        {input: 5, cachedInput: 0.5, output: 30},
+	"gpt-5.5-high-fast":          {input: 5, cachedInput: 0.5, output: 30},
+	"gpt-5.5-xhigh-fast":         {input: 5, cachedInput: 0.5, output: 30},
+	"gpt-5.4":                    {input: 2.5, cachedInput: 0.25, output: 15},
+	"gpt-5.4-mini":               {input: 0.75, cachedInput: 0.075, output: 4.5},
+	"gpt-5.4-nano":               {input: 0.2, cachedInput: 0.02, output: 1.25},
+	"gpt-5.3-codex":              {input: 1.75, cachedInput: 0.175, output: 14},
+	"gpt-5.3-codex-spark":        {input: 1.75, cachedInput: 0.175, output: 14},
+	"gpt-5.3-codex-spark-low":    {input: 1.75, cachedInput: 0.175, output: 14},
+	"gpt-5.3-codex-spark-medium": {input: 1.75, cachedInput: 0.175, output: 14},
+	"gpt-5.3-codex-spark-high":   {input: 1.75, cachedInput: 0.175, output: 14},
+	"gpt-5.3-codex-spark-xhigh":  {input: 1.75, cachedInput: 0.175, output: 14},
+	"gpt-5":                      {input: 1.25, cachedInput: 0.125, output: 10},
+	"gpt-5-mini":                 {input: 0.25, cachedInput: 0.025, output: 2},
+	"gpt-5-nano":                 {input: 0.05, cachedInput: 0.005, output: 0.4},
+	"gpt-5-pro":                  {input: 15, cachedInput: 0, output: 120},
+}
+
+var apiKeyUnknownGPTPrice = apiKeyModelPrice{input: 15, cachedInput: 0, output: 120}
+
+func estimateAPIKeyCostUSD(apiStats usage.APISnapshot) float64 {
+	var total float64
+	for model, modelStats := range apiStats.Models {
+		price, ok := priceForAPIKeyModel(model)
+		if !ok {
+			continue
+		}
+		for _, detail := range modelStats.Details {
+			total += estimateTokenStatsCostUSD(detail.Tokens, price)
+		}
+	}
+	return total
+}
+
+func priceForAPIKeyModel(model string) (apiKeyModelPrice, bool) {
+	model = normalizeAPIKeyCostModel(model)
+	if model == "" {
+		return apiKeyModelPrice{}, false
+	}
+	if price, ok := apiKeyGPTModelPrices[model]; ok {
+		return price, true
+	}
+	if strings.HasPrefix(model, "gpt-") {
+		return apiKeyUnknownGPTPrice, true
+	}
+	return apiKeyModelPrice{}, false
+}
+
+func normalizeAPIKeyCostModel(model string) string {
+	model = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(model, "models/")))
+	if idx := strings.LastIndex(model, "/"); idx >= 0 {
+		model = strings.TrimSpace(model[idx+1:])
+	}
+	return strings.TrimPrefix(model, "models/")
+}
+
+func estimateTokenStatsCostUSD(tokens usage.TokenStats, price apiKeyModelPrice) float64 {
+	inputTokens := clampNonNegative(tokens.InputTokens)
+	cachedTokens := clampNonNegative(tokens.CachedTokens)
+	if cachedTokens > inputTokens {
+		cachedTokens = inputTokens
+	}
+	uncachedInputTokens := inputTokens - cachedTokens
+	outputTokens := clampNonNegative(tokens.OutputTokens)
+	if outputTokens == 0 && tokens.TotalTokens > inputTokens {
+		outputTokens = tokens.TotalTokens - inputTokens
+	}
+	return (float64(uncachedInputTokens)*price.input +
+		float64(cachedTokens)*price.cachedInput +
+		float64(outputTokens)*price.output) / 1_000_000
+}
+
+func clampNonNegative(value int64) int64 {
+	if value < 0 {
+		return 0
+	}
+	return value
 }
 
 func extractRequestModel(c *gin.Context) (string, bool) {

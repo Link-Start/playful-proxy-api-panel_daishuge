@@ -101,6 +101,60 @@ func TestLoadConfigOptionalPresetPromptEnabledRequiresPrompt(t *testing.T) {
 	}
 }
 
+func TestLoadConfigOptionalAPIKeyControlPresetPrompt(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte(`api-key-controls:
+  - api-key: "client-key"
+    max-cost-usd: 30
+    preset-prompt:
+      enabled: true
+      prompt: "per key prompt"
+      max-bytes: 128
+`)
+	if err := os.WriteFile(configPath, data, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfigOptional(configPath, false)
+	if err != nil {
+		t.Fatalf("LoadConfigOptional() error = %v", err)
+	}
+	if got := len(cfg.APIKeyControls); got != 1 {
+		t.Fatalf("api-key-controls len = %d, want 1", got)
+	}
+	control := cfg.APIKeyControls[0]
+	if control.MaxCostUSD != 30 {
+		t.Fatalf("max-cost-usd = %f, want 30", control.MaxCostUSD)
+	}
+	if control.PresetPrompt == nil {
+		t.Fatal("preset-prompt = nil, want config")
+	}
+	if !control.PresetPrompt.Enabled || control.PresetPrompt.Prompt != "per key prompt" || control.PresetPrompt.MaxBytes != 128 {
+		t.Fatalf("preset-prompt = %+v, want enabled per-key config", control.PresetPrompt)
+	}
+}
+
+func TestLoadConfigOptionalAPIKeyControlPresetPromptValidation(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte(`api-key-controls:
+  - api-key: "client-key"
+    preset-prompt:
+      enabled: true
+      prompt: "   "
+`)
+	if err := os.WriteFile(configPath, data, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfigOptional(configPath, false)
+	if err == nil {
+		t.Fatal("LoadConfigOptional() error = nil, want validation error")
+	}
+	if !strings.Contains(err.Error(), "api-key-controls[0].preset-prompt") {
+		t.Fatalf("LoadConfigOptional() error = %v, want per-key preset prompt validation", err)
+	}
+}
+
 func TestLoadConfigOptionalPresetPromptSizeLimit(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	data := []byte(`preset-prompt:

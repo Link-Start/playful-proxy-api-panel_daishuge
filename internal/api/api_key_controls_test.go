@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	proxyconfig "github.com/router-for-me/CLIProxyAPI/v6/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
+	coreusage "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/usage"
 )
 
 func TestAPIKeyControl_AllowsModelAndPreservesJSONBody(t *testing.T) {
@@ -79,5 +82,43 @@ func TestFilterModelsForAPIKey(t *testing.T) {
 	}
 	if got := filtered[0]["id"]; got != "gpt-5.3-codex-spark-high" {
 		t.Fatalf("filtered model = %v, want spark model", got)
+	}
+}
+
+func TestAPIKeyControl_AllowsEstimatedCostBelowLimit(t *testing.T) {
+	stats := usage.NewRequestStatistics()
+	stats.Record(context.Background(), coreusage.Record{
+		APIKey: "cost-key",
+		Model:  "gpt-5.5-low-fast",
+		Detail: coreusage.Detail{
+			InputTokens:  100_000,
+			CachedTokens: 20_000,
+			OutputTokens: 100_000,
+			TotalTokens:  200_000,
+		},
+	})
+
+	control := &proxyconfig.APIKeyControl{APIKey: "cost-key", MaxCostUSD: 30}
+	if !withinAPIKeyBudget(control, stats) {
+		t.Fatal("withinAPIKeyBudget() = false, want true below estimated cost limit")
+	}
+}
+
+func TestAPIKeyControl_BlocksEstimatedCostAtLimit(t *testing.T) {
+	stats := usage.NewRequestStatistics()
+	stats.Record(context.Background(), coreusage.Record{
+		APIKey: "cost-key",
+		Model:  "gpt-5.5-low-fast",
+		Detail: coreusage.Detail{
+			InputTokens:  1_000_000,
+			CachedTokens: 200_000,
+			OutputTokens: 1_000_000,
+			TotalTokens:  2_000_000,
+		},
+	})
+
+	control := &proxyconfig.APIKeyControl{APIKey: "cost-key", MaxCostUSD: 30}
+	if withinAPIKeyBudget(control, stats) {
+		t.Fatal("withinAPIKeyBudget() = true, want false at estimated cost limit")
 	}
 }

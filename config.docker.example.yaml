@@ -21,13 +21,20 @@ auth-dir: "/root/.cli-proxy-api"
 api-keys:
   - "change-me-api-key"
 
-# Optional per-key model and usage controls. Keys without an entry keep the legacy unrestricted behavior.
+# Optional per-key model, prompt, and usage controls. Keys without an entry keep the legacy unrestricted behavior.
 api-key-controls:
   - name: "default"
     api-key: "change-me-api-key"
     models:
       - "*"
     unlimited: true
+    # Request, token, and estimated USD budgets require usage-statistics-enabled.
+    max-cost-usd: 0
+    # Optional per-key preset prompt. When present, this overrides the global preset-prompt block for this API key.
+    # preset-prompt:
+    #   enabled: true
+    #   prompt: ""
+    #   max-bytes: 32768
 
 debug: false
 logging-to-file: true

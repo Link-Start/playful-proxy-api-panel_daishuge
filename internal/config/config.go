@@ -172,20 +172,22 @@ type Config struct {
 	legacyMigrationPending bool `yaml:"-" json:"-"`
 }
 
-// APIKeyControl defines optional model and usage limits for one downstream API key.
+// APIKeyControl defines optional model, prompt, and usage limits for one downstream API key.
 // Budget values <= 0 are treated as unlimited. The Unlimited flag bypasses usage budgets,
-// but model allow/deny rules still apply.
+// but model allow/deny rules and per-key prompt settings still apply.
 type APIKeyControl struct {
-	APIKey         string   `yaml:"api-key,omitempty" json:"api-key,omitempty"`
-	Key            string   `yaml:"key,omitempty" json:"key,omitempty"`
-	Name           string   `yaml:"name,omitempty" json:"name,omitempty"`
-	Enabled        *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	Unlimited      bool     `yaml:"unlimited,omitempty" json:"unlimited,omitempty"`
-	Models         []string `yaml:"models,omitempty" json:"models,omitempty"`
-	ExcludedModels []string `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
-	MaxRequests    int64    `yaml:"max-requests,omitempty" json:"max-requests,omitempty"`
-	MaxInputTokens int64    `yaml:"max-input-tokens,omitempty" json:"max-input-tokens,omitempty"`
-	MaxTotalTokens int64    `yaml:"max-total-tokens,omitempty" json:"max-total-tokens,omitempty"`
+	APIKey         string              `yaml:"api-key,omitempty" json:"api-key,omitempty"`
+	Key            string              `yaml:"key,omitempty" json:"key,omitempty"`
+	Name           string              `yaml:"name,omitempty" json:"name,omitempty"`
+	Enabled        *bool               `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Unlimited      bool                `yaml:"unlimited,omitempty" json:"unlimited,omitempty"`
+	Models         []string            `yaml:"models,omitempty" json:"models,omitempty"`
+	ExcludedModels []string            `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
+	MaxRequests    int64               `yaml:"max-requests,omitempty" json:"max-requests,omitempty"`
+	MaxInputTokens int64               `yaml:"max-input-tokens,omitempty" json:"max-input-tokens,omitempty"`
+	MaxTotalTokens int64               `yaml:"max-total-tokens,omitempty" json:"max-total-tokens,omitempty"`
+	MaxCostUSD     float64             `yaml:"max-cost-usd,omitempty" json:"max-cost-usd,omitempty"`
+	PresetPrompt   *PresetPromptConfig `yaml:"preset-prompt,omitempty" json:"preset-prompt,omitempty"`
 }
 
 // ClaudeHeaderDefaults configures default header values injected into Claude API requests.
@@ -907,6 +909,18 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	cfg.PresetPrompt.Normalize()
 	if errValidatePresetPrompt := cfg.PresetPrompt.Validate(); errValidatePresetPrompt != nil {
 		return nil, errValidatePresetPrompt
+	}
+	for i := range cfg.APIKeyControls {
+		if cfg.APIKeyControls[i].MaxCostUSD < 0 {
+			cfg.APIKeyControls[i].MaxCostUSD = 0
+		}
+		if cfg.APIKeyControls[i].PresetPrompt == nil {
+			continue
+		}
+		cfg.APIKeyControls[i].PresetPrompt.Normalize()
+		if errValidateAPIKeyPresetPrompt := cfg.APIKeyControls[i].PresetPrompt.Validate(); errValidateAPIKeyPresetPrompt != nil {
+			return nil, fmt.Errorf("api-key-controls[%d].preset-prompt: %w", i, errValidateAPIKeyPresetPrompt)
+		}
 	}
 
 	if cfg.RedisUsageQueueRetentionSeconds <= 0 {

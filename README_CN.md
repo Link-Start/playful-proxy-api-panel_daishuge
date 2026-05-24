@@ -92,9 +92,9 @@ Docker bridge 流量在容器内会被视为非 localhost，所以 `config.docke
 - `usage-statistics-path`：可选，把快照文件放到指定路径。
 - `redis-usage-queue-retention-seconds`：Redis usage queue 启用时的保留时间。
 - `/v0/management/usage-queue`：弹出 Redis-compatible usage stream 中排队的使用量记录，方便外部集成消费。
-- `api-key-controls`：可选，按 client key 限制模型 pattern 和 request/token 用量预算；启用预算时需要同时开启 usage statistics。
+- `api-key-controls`：可选，按 client key 限制模型 pattern、per-key preset prompt 和 request/token/estimated USD 用量预算；启用预算时需要同时开启 usage statistics。
 - `conversation-log`：默认关闭；只有需要受保护的完整请求/响应正文日志时才启用。
-- `preset-prompt`：默认关闭；只把 operator prompt 注入上游 chat-like 请求。
+- `preset-prompt`：默认关闭；只把 operator prompt 注入上游 chat-like 请求。`api-key-controls[].preset-prompt` 会覆盖这个全局配置。
 - `oauth-model-alias`：配置友好模型别名，同时兼容老配置写法。
 
 上线前先读 [Conversation Logging And Preset Prompt Operations](docs/operations-conversation-logging-and-preset-prompt.md)，尤其是日志隐私、retention 和 prompt 不外泄检查。

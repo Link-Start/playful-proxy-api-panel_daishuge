@@ -41,9 +41,9 @@ api-keys:
   - "your-api-key-2"
   - "your-api-key-3"
 
-# Optional per-key model and usage controls. Keys without an entry keep the legacy unrestricted behavior.
-# Model patterns support "*". Budget values <= 0 are unlimited. Set unlimited: true to bypass budgets.
-# Token and request budgets are evaluated from usage statistics, so enable usage-statistics-enabled when using budgets.
+# Optional per-key model, prompt, and usage controls. Keys without an entry keep the legacy unrestricted behavior.
+# Model patterns support "*". Budget values <= 0 are unlimited. Set unlimited: true to bypass usage budgets.
+# Request, token, and estimated USD budgets are evaluated from usage statistics, so enable usage-statistics-enabled when using budgets.
 api-key-controls:
   - name: "spark-only"
     api-key: "your-api-key-1"
@@ -56,6 +56,12 @@ api-key-controls:
       - "*"
     max-requests: 0
     max-total-tokens: 0
+    max-cost-usd: 0
+    # Optional per-key preset prompt. When present, this overrides the global preset-prompt block for this API key.
+    # preset-prompt:
+    #   enabled: true
+    #   prompt: ""
+    #   max-bytes: 32768
 
 # Enable debug logging
 debug: false

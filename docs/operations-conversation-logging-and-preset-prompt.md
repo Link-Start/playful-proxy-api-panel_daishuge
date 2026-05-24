@@ -23,6 +23,17 @@ preset-prompt:
   enabled: false
   prompt: ""
   max-bytes: 32768
+
+api-key-controls:
+  - name: "gpt-prompt-budget"
+    api-key: "client-key"
+    models:
+      - "gpt*"
+    max-cost-usd: 30
+    preset-prompt:
+      enabled: true
+      prompt: "operator prompt"
+      max-bytes: 32768
 ```
 
 For Docker, keep the conversation log directory under the mounted `/CLIProxyAPI/data` volume so logs survive container replacement.
@@ -54,6 +65,8 @@ The bundled management panel exposes the same data in the Logs area under Conver
 When `preset-prompt.enabled` is `false`, upstream request payloads are unchanged.
 
 When enabled, PPAP inserts the configured prompt only into the upstream chat-like payload. It supports the OpenAI chat completions shape, OpenAI Responses instructions, Claude system prompts, and Gemini system instructions.
+
+When `api-key-controls[].preset-prompt` is configured for the authenticated client key, that per-key block overrides the global `preset-prompt` block. A per-key block with `enabled: false` disables prompt injection for that key even when the global prompt is enabled.
 
 The injected prompt is not returned to API clients in non-streaming responses, streaming chunks, or normal client-visible metadata. Conversation logs store the original client request and client-facing response, not the private injected prompt. Configuration change summaries redact prompt body changes.
 

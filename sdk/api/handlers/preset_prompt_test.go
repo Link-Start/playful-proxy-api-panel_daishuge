@@ -5,10 +5,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
@@ -173,6 +175,60 @@ func TestPresetPromptInjectsOpenAIRequestOnly(t *testing.T) {
 	}
 	if bytes.Contains(originals[0], []byte(presetPromptTestMarker)) {
 		t.Fatalf("OriginalRequest leaked preset prompt: %s", originals[0])
+	}
+}
+
+func TestPresetPromptUsesAPIKeySpecificPrompt(t *testing.T) {
+	executor := &presetPromptCaptureExecutor{provider: "preset-prompt-api-key"}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{
+		Enabled: true,
+		Prompt:  "global prompt",
+	})
+	handler.SetAPIKeyControls([]sdkconfig.APIKeyControl{
+		{
+			APIKey: "client-key",
+			PresetPrompt: &sdkconfig.PresetPromptConfig{
+				Enabled: true,
+				Prompt:  "key prompt",
+			},
+		},
+	})
+	body := []byte(fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hello"}]}`, model))
+
+	_, _, errMsg := handler.ExecuteWithAuthManager(contextWithPresetPromptAPIKey("client-key"), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+	payloads := executor.ExecutePayloads()
+	if len(payloads) != 1 {
+		t.Fatalf("captured upstream payloads = %d, want 1", len(payloads))
+	}
+	if got := gjson.GetBytes(payloads[0], "messages.0.content").String(); got != "key prompt" {
+		t.Fatalf("messages.0.content = %q, want key prompt; payload=%s", got, payloads[0])
+	}
+}
+
+func TestPresetPromptAPIKeySpecificDisableOverridesGlobal(t *testing.T) {
+	executor := &presetPromptCaptureExecutor{provider: "preset-prompt-api-key-disabled"}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{
+		Enabled: true,
+		Prompt:  presetPromptTestMarker,
+	})
+	handler.SetAPIKeyControls([]sdkconfig.APIKeyControl{
+		{
+			APIKey:       "client-key",
+			PresetPrompt: &sdkconfig.PresetPromptConfig{Enabled: false},
+		},
+	})
+	body := []byte(fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hello"}]}`, model))
+
+	_, _, errMsg := handler.ExecuteWithAuthManager(contextWithPresetPromptAPIKey("client-key"), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+	payloads := executor.ExecutePayloads()
+	if len(payloads) != 1 || !bytes.Equal(payloads[0], body) {
+		t.Fatalf("disabled per-key preset prompt changed payload: got %q want %q", payloads, body)
 	}
 }
 
@@ -407,4 +463,11 @@ func newPresetPromptTestHandler(t *testing.T, executor *presetPromptCaptureExecu
 func safePresetPromptTestName(name string) string {
 	replacer := strings.NewReplacer("/", "-", "_", "-", " ", "-", "(", "-", ")", "-")
 	return strings.ToLower(replacer.Replace(name))
+}
+
+func contextWithPresetPromptAPIKey(apiKey string) context.Context {
+	gin.SetMode(gin.TestMode)
+	ginCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ginCtx.Set("apiKey", apiKey)
+	return context.WithValue(context.Background(), "gin", ginCtx)
 }

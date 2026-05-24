@@ -15,6 +15,7 @@ type TLSConfig = internalconfig.TLSConfig
 type RemoteManagement = internalconfig.RemoteManagement
 type ConversationLogConfig = internalconfig.ConversationLogConfig
 type PresetPromptConfig = internalconfig.PresetPromptConfig
+type APIKeyControl = internalconfig.APIKeyControl
 type UpstreamConcurrencyConfig = internalconfig.UpstreamConcurrencyConfig
 type AmpCode = internalconfig.AmpCode
 type OAuthModelAlias = internalconfig.OAuthModelAlias
