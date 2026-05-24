@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -11,6 +12,7 @@ import (
 )
 
 const presetPromptSeparator = "\n\n"
+const presetPromptRedactionText = "[preset prompt redacted]"
 
 // SetPresetPromptConfig updates the request-time preset prompt snapshot.
 func (h *BaseAPIHandler) SetPresetPromptConfig(cfg config.PresetPromptConfig) {
@@ -90,6 +92,99 @@ func (h *BaseAPIHandler) applyPresetPromptToPayloadForAPIKey(handlerType string,
 	default:
 		return rawJSON
 	}
+}
+
+func redactPresetPromptFromPayload(payload []byte, prompt string) []byte {
+	needles := presetPromptNeedles(prompt)
+	if len(payload) == 0 || len(needles) == 0 {
+		return payload
+	}
+	out := bytes.Clone(payload)
+	replacement := []byte(presetPromptRedactionText)
+	for _, needle := range needles {
+		out = bytes.ReplaceAll(out, needle, replacement)
+	}
+	return out
+}
+
+type presetPromptStreamRedactor struct {
+	needles [][]byte
+	keep    int
+	buffer  []byte
+}
+
+func newPresetPromptStreamRedactor(prompt string) *presetPromptStreamRedactor {
+	needles := presetPromptNeedles(prompt)
+	if len(needles) == 0 {
+		return nil
+	}
+	keep := 0
+	for _, needle := range needles {
+		if len(needle) > keep {
+			keep = len(needle)
+		}
+	}
+	return &presetPromptStreamRedactor{needles: needles, keep: keep}
+}
+
+func (r *presetPromptStreamRedactor) Push(chunk []byte) []byte {
+	if r == nil || len(chunk) == 0 {
+		return chunk
+	}
+	r.buffer = append(r.buffer, chunk...)
+	r.replaceBuffered()
+	if len(r.buffer) <= r.keep {
+		return nil
+	}
+	emitLen := len(r.buffer) - r.keep
+	out := bytes.Clone(r.buffer[:emitLen])
+	r.buffer = append(r.buffer[:0], r.buffer[emitLen:]...)
+	return out
+}
+
+func (r *presetPromptStreamRedactor) Flush() []byte {
+	if r == nil || len(r.buffer) == 0 {
+		return nil
+	}
+	r.replaceBuffered()
+	out := bytes.Clone(r.buffer)
+	r.buffer = nil
+	return out
+}
+
+func (r *presetPromptStreamRedactor) replaceBuffered() {
+	if r == nil || len(r.buffer) == 0 {
+		return
+	}
+	replacement := []byte(presetPromptRedactionText)
+	for _, needle := range r.needles {
+		r.buffer = bytes.ReplaceAll(r.buffer, needle, replacement)
+	}
+}
+
+func presetPromptNeedles(prompt string) [][]byte {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	add := func(value []byte, out *[][]byte) {
+		if len(value) == 0 {
+			return
+		}
+		key := string(value)
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		*out = append(*out, bytes.Clone(value))
+	}
+	out := make([][]byte, 0, 2)
+	add([]byte(prompt), &out)
+	if encoded, err := json.Marshal(prompt); err == nil && len(encoded) >= 2 {
+		add(encoded[1:len(encoded)-1], &out)
+	}
+	return out
 }
 
 func apiKeyFromRequestContext(ctx context.Context) string {

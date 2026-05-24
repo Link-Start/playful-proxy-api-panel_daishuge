@@ -178,6 +178,53 @@ func TestPresetPromptInjectsOpenAIRequestOnly(t *testing.T) {
 	}
 }
 
+func TestPresetPromptRedactsNonStreamingResponseLeak(t *testing.T) {
+	executor := &presetPromptCaptureExecutor{
+		provider:        "preset-prompt-redact-response",
+		responsePayload: []byte(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, "prefix "+presetPromptTestMarker+" suffix")),
+	}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{
+		Enabled: true,
+		Prompt:  presetPromptTestMarker,
+	})
+	body := []byte(fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hello"}]}`, model))
+
+	payload, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+	if bytes.Contains(payload, []byte(presetPromptTestMarker)) {
+		t.Fatalf("downstream response leaked preset prompt: %s", payload)
+	}
+	if !bytes.Contains(payload, []byte(presetPromptRedactionText)) {
+		t.Fatalf("downstream response missing redaction marker: %s", payload)
+	}
+}
+
+func TestPresetPromptRedactsJSONEscapedResponseLeak(t *testing.T) {
+	prompt := "line 1\nline 2"
+	executor := &presetPromptCaptureExecutor{
+		provider:        "preset-prompt-redact-escaped-response",
+		responsePayload: []byte(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, prompt)),
+	}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{
+		Enabled: true,
+		Prompt:  prompt,
+	})
+	body := []byte(fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hello"}]}`, model))
+
+	payload, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+	if bytes.Contains(payload, []byte(`line 1\nline 2`)) || bytes.Contains(payload, []byte(prompt)) {
+		t.Fatalf("downstream response leaked escaped preset prompt: %s", payload)
+	}
+	if !bytes.Contains(payload, []byte(presetPromptRedactionText)) {
+		t.Fatalf("downstream response missing redaction marker: %s", payload)
+	}
+}
+
 func TestPresetPromptUsesAPIKeySpecificPrompt(t *testing.T) {
 	executor := &presetPromptCaptureExecutor{provider: "preset-prompt-api-key"}
 	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{
@@ -285,6 +332,38 @@ func TestPresetPromptInjectsStreamingRequestWithoutLeakingChunks(t *testing.T) {
 	originals := executor.StreamOriginalRequests()
 	if len(originals) != 1 || !bytes.Equal(originals[0], body) {
 		t.Fatalf("stream OriginalRequest was mutated: got %q want %q", originals, body)
+	}
+}
+
+func TestPresetPromptRedactsStreamingResponseLeakAcrossChunks(t *testing.T) {
+	executor := &presetPromptCaptureExecutor{
+		provider: "preset-prompt-stream-redact",
+		streamChunks: []coreexecutor.StreamChunk{
+			{Payload: []byte(`data: {"delta":"prefix T14_INTERNAL_`)},
+			{Payload: []byte("PRESET_PROMPT_MARKER suffix\"}\n\n")},
+		},
+	}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{
+		Enabled: true,
+		Prompt:  presetPromptTestMarker,
+	})
+	body := []byte(fmt.Sprintf(`{"model":%q,"stream":true,"messages":[{"role":"user","content":"hello"}]}`, model))
+
+	data, _, errs := handler.ExecuteStreamWithAuthManager(context.Background(), "openai", model, body, "")
+	var got bytes.Buffer
+	for chunk := range data {
+		got.Write(chunk)
+	}
+	for errMsg := range errs {
+		if errMsg != nil {
+			t.Fatalf("unexpected stream error: %+v", errMsg)
+		}
+	}
+	if strings.Contains(got.String(), presetPromptTestMarker) {
+		t.Fatalf("stream response leaked preset prompt: %s", got.String())
+	}
+	if !strings.Contains(got.String(), presetPromptRedactionText) {
+		t.Fatalf("stream response missing redaction marker: %s", got.String())
 	}
 }
 

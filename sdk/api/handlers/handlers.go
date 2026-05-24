@@ -564,7 +564,9 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
 	reasoningEffort := setReasoningEffortMetadata(reqMeta, handlerType, normalizedModel, rawJSON)
 	ctx = coreusage.WithReasoningEffort(ctx, reasoningEffort)
-	payload := h.applyPresetPromptToPayloadForAPIKey(handlerType, rawJSON, apiKeyFromRequestContext(ctx))
+	apiKey := apiKeyFromRequestContext(ctx)
+	presetPrompt, hasPresetPrompt := h.activePresetPromptForAPIKey(apiKey)
+	payload := h.applyPresetPromptToPayloadForAPIKey(handlerType, rawJSON, apiKey)
 	if len(payload) == 0 {
 		payload = nil
 	}
@@ -599,11 +601,15 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 		rec.finishNonStream(nil, addon, status, err, reqMeta)
 		return nil, nil, &interfaces.ErrorMessage{StatusCode: status, Error: err, Addon: addon}
 	}
-	rec.finishNonStream(resp.Payload, resp.Headers, http.StatusOK, nil, reqMeta)
-	if !PassthroughHeadersEnabled(h.Cfg) {
-		return resp.Payload, nil, nil
+	responsePayload := resp.Payload
+	if hasPresetPrompt {
+		responsePayload = redactPresetPromptFromPayload(responsePayload, presetPrompt)
 	}
-	return resp.Payload, FilterUpstreamHeaders(resp.Headers), nil
+	rec.finishNonStream(responsePayload, resp.Headers, http.StatusOK, nil, reqMeta)
+	if !PassthroughHeadersEnabled(h.Cfg) {
+		return responsePayload, nil, nil
+	}
+	return responsePayload, FilterUpstreamHeaders(resp.Headers), nil
 }
 
 // ExecuteCountWithAuthManager executes a non-streaming request via the core auth manager.
@@ -676,7 +682,9 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
 	reasoningEffort := setReasoningEffortMetadata(reqMeta, handlerType, normalizedModel, rawJSON)
 	ctx = coreusage.WithReasoningEffort(ctx, reasoningEffort)
-	payload := h.applyPresetPromptToPayloadForAPIKey(handlerType, rawJSON, apiKeyFromRequestContext(ctx))
+	apiKey := apiKeyFromRequestContext(ctx)
+	presetPrompt, hasPresetPrompt := h.activePresetPromptForAPIKey(apiKey)
+	payload := h.applyPresetPromptToPayloadForAPIKey(handlerType, rawJSON, apiKey)
 	if len(payload) == 0 {
 		payload = nil
 	}
@@ -739,6 +747,10 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 		sentPayload := false
 		bootstrapRetries := 0
 		maxBootstrapRetries := StreamingBootstrapRetries(h.Cfg)
+		var redactor *presetPromptStreamRedactor
+		if hasPresetPrompt {
+			redactor = newPresetPromptStreamRedactor(presetPrompt)
+		}
 
 		sendErr := func(msg *interfaces.ErrorMessage) bool {
 			if ctx == nil {
@@ -764,6 +776,18 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 			case dataChan <- chunk:
 				return true
 			}
+		}
+
+		flushRedactor := func() bool {
+			if redactor == nil {
+				return true
+			}
+			redacted := redactor.Flush()
+			if len(redacted) == 0 {
+				return true
+			}
+			rec.captureStreamChunk(redacted)
+			return sendData(cloneBytes(redacted))
 		}
 
 		bootstrapEligible := func(err error) bool {
@@ -796,9 +820,16 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 					chunk, ok = <-chunks
 				}
 				if !ok {
+					if !flushRedactor() && ctx != nil {
+						finalErr = ctx.Err()
+					}
 					return
 				}
 				if chunk.Err != nil {
+					if !flushRedactor() && ctx != nil {
+						finalErr = ctx.Err()
+						return
+					}
 					streamErr := chunk.Err
 					// Safe bootstrap recovery: if the upstream fails before any payload bytes are sent,
 					// retry a few times (to allow auth rotation / transient recovery) and then attempt model fallback.
@@ -844,9 +875,16 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 							return
 						}
 					}
-					rec.captureStreamChunk(chunk.Payload)
 					sentPayload = true
-					if okSendData := sendData(cloneBytes(chunk.Payload)); !okSendData {
+					responseChunk := chunk.Payload
+					if redactor != nil {
+						responseChunk = redactor.Push(chunk.Payload)
+					}
+					if len(responseChunk) == 0 {
+						continue
+					}
+					rec.captureStreamChunk(responseChunk)
+					if okSendData := sendData(cloneBytes(responseChunk)); !okSendData {
 						if ctx != nil {
 							finalErr = ctx.Err()
 						}
