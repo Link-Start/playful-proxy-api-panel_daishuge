@@ -32,3 +32,64 @@ func NormalizeServiceTierValue(value string) (string, bool) {
 		return "", false
 	}
 }
+
+// NormalizeFastModelAlias strips the client-facing Codex fast suffix from a
+// model alias while preserving any thinking-strength suffix before it.
+func NormalizeFastModelAlias(model string) (string, bool) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return "", false
+	}
+	if !strings.HasSuffix(strings.ToLower(model), "-fast") {
+		return model, false
+	}
+	base := strings.TrimSpace(model[:len(model)-len("-fast")])
+	if base == "" {
+		return model, false
+	}
+	if !isSupportedFastModelBase(base) {
+		return model, false
+	}
+	return base, true
+}
+
+func isSupportedFastModelBase(model string) bool {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case "gpt-5.5", "gpt-5.5-low", "gpt-5.5-medium", "gpt-5.5-high", "gpt-5.5-xhigh":
+		return true
+	default:
+		return false
+	}
+}
+
+// RequestWantsPriorityServiceTier reports whether the client requested Codex
+// priority service either by request parameter or by a fast model alias.
+func RequestWantsPriorityServiceTier(originalJSON []byte, model string) bool {
+	if _, ok := NormalizeFastModelAlias(model); ok {
+		return true
+	}
+	if len(originalJSON) == 0 {
+		return false
+	}
+	if rawModel := gjson.GetBytes(originalJSON, "model").String(); rawModel != "" {
+		if _, ok := NormalizeFastModelAlias(rawModel); ok {
+			return true
+		}
+	}
+	serviceTier := gjson.GetBytes(originalJSON, "service_tier")
+	if !serviceTier.Exists() {
+		return false
+	}
+	tier, ok := NormalizeServiceTierValue(serviceTier.String())
+	return ok && tier == "priority"
+}
+
+// ApplyRequestedServiceTier normalizes the body service tier and applies the
+// priority tier requested by the original client payload or model alias.
+func ApplyRequestedServiceTier(body, originalJSON []byte, model string) []byte {
+	body = NormalizeServiceTier(body)
+	if RequestWantsPriorityServiceTier(originalJSON, model) {
+		body, _ = sjson.SetBytes(body, "service_tier", "priority")
+	}
+	return body
+}

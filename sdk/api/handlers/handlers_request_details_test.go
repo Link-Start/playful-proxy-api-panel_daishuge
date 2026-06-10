@@ -23,6 +23,9 @@ func TestGetRequestDetails_PreservesSuffix(t *testing.T) {
 	modelRegistry.RegisterClient("test-request-details-openai", "openai", []*registry.ModelInfo{
 		{ID: "gpt-5.2", Created: now + 20, Thinking: &registry.ThinkingSupport{Levels: []string{"low", "medium", "high", "xhigh"}}},
 	})
+	modelRegistry.RegisterClient("test-request-details-codex", "codex", []*registry.ModelInfo{
+		{ID: "gpt-5.5", Created: now + 15, Thinking: &registry.ThinkingSupport{Levels: []string{"low", "medium", "high", "xhigh"}}},
+	})
 	modelRegistry.RegisterClient("test-request-details-claude", "claude", []*registry.ModelInfo{
 		{ID: "claude-sonnet-4-5", Created: now + 5},
 	})
@@ -31,6 +34,7 @@ func TestGetRequestDetails_PreservesSuffix(t *testing.T) {
 	clientIDs := []string{
 		"test-request-details-gemini",
 		"test-request-details-openai",
+		"test-request-details-codex",
 		"test-request-details-claude",
 	}
 	for _, clientID := range clientIDs {
@@ -68,6 +72,20 @@ func TestGetRequestDetails_PreservesSuffix(t *testing.T) {
 			inputModel:    "gpt-5.2-high",
 			wantProviders: []string{"openai"},
 			wantModel:     "gpt-5.2-high",
+			wantErr:       false,
+		},
+		{
+			name:          "codex fast alias resolves to base model",
+			inputModel:    "gpt-5.5-fast",
+			wantProviders: []string{"codex"},
+			wantModel:     "gpt-5.5",
+			wantErr:       false,
+		},
+		{
+			name:          "codex thinking fast alias resolves to thinking alias",
+			inputModel:    "gpt-5.5-high-fast",
+			wantProviders: []string{"codex"},
+			wantModel:     "gpt-5.5-high",
 			wantErr:       false,
 		},
 		{
