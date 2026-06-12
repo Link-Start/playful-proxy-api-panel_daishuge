@@ -94,6 +94,47 @@ func (h *BaseAPIHandler) applyPresetPromptToPayloadForAPIKey(handlerType string,
 	}
 }
 
+func (h *BaseAPIHandler) applyRequestPromptInjectionsToPayloadForAPIKey(handlerType string, rawJSON []byte, apiKey string) ([]byte, []string) {
+	payload := rawJSON
+	var redactions []string
+
+	if prompt, ok := h.activePresetPromptForAPIKey(apiKey); ok {
+		mutated := applyPromptToPayload(handlerType, payload, prompt)
+		if !bytes.Equal(mutated, payload) {
+			payload = mutated
+			redactions = append(redactions, prompt)
+		}
+	}
+
+	if prompt, ok := immersiveTranslateSubtitlePromptForPayload(handlerType, rawJSON); ok {
+		mutated := applyPromptToPayload(handlerType, payload, prompt)
+		if !bytes.Equal(mutated, payload) {
+			payload = mutated
+			redactions = append(redactions, prompt)
+		}
+	}
+
+	return payload, redactions
+}
+
+func applyPromptToPayload(handlerType string, rawJSON []byte, prompt string) []byte {
+	if strings.TrimSpace(prompt) == "" || len(rawJSON) == 0 || !json.Valid(rawJSON) {
+		return rawJSON
+	}
+	switch strings.ToLower(strings.TrimSpace(handlerType)) {
+	case "openai":
+		return injectPresetPromptIntoOpenAIChat(rawJSON, prompt)
+	case "openai-response":
+		return injectPresetPromptIntoOpenAIResponses(rawJSON, prompt)
+	case "claude":
+		return injectPresetPromptIntoClaude(rawJSON, prompt)
+	case "gemini", "gemini-cli":
+		return injectPresetPromptIntoGemini(rawJSON, prompt)
+	default:
+		return rawJSON
+	}
+}
+
 func redactPresetPromptFromPayload(payload []byte, prompt string) []byte {
 	needles := presetPromptNeedles(prompt)
 	if len(payload) == 0 || len(needles) == 0 {
@@ -107,13 +148,39 @@ func redactPresetPromptFromPayload(payload []byte, prompt string) []byte {
 	return out
 }
 
+func redactPresetPromptsFromPayload(payload []byte, prompts []string) []byte {
+	if len(payload) == 0 || len(prompts) == 0 {
+		return payload
+	}
+	out := payload
+	for _, prompt := range prompts {
+		out = redactPresetPromptFromPayload(out, prompt)
+	}
+	return out
+}
+
 type presetPromptStreamRedactor struct {
 	needles [][]byte
 	buffer  []byte
 }
 
 func newPresetPromptStreamRedactor(prompt string) *presetPromptStreamRedactor {
-	needles := presetPromptNeedles(prompt)
+	return newPresetPromptStreamRedactorForPrompts([]string{prompt})
+}
+
+func newPresetPromptStreamRedactorForPrompts(prompts []string) *presetPromptStreamRedactor {
+	seen := map[string]struct{}{}
+	var needles [][]byte
+	for _, prompt := range prompts {
+		for _, needle := range presetPromptNeedles(prompt) {
+			key := string(needle)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			needles = append(needles, needle)
+		}
+	}
 	if len(needles) == 0 {
 		return nil
 	}

@@ -566,8 +566,7 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 	reasoningEffort := setReasoningEffortMetadata(reqMeta, handlerType, normalizedModel, rawJSON)
 	ctx = coreusage.WithReasoningEffort(ctx, reasoningEffort)
 	apiKey := apiKeyFromRequestContext(ctx)
-	presetPrompt, hasPresetPrompt := h.activePresetPromptForAPIKey(apiKey)
-	payload := h.applyPresetPromptToPayloadForAPIKey(handlerType, rawJSON, apiKey)
+	payload, promptRedactions := h.applyRequestPromptInjectionsToPayloadForAPIKey(handlerType, rawJSON, apiKey)
 	if len(payload) == 0 {
 		payload = nil
 	}
@@ -603,8 +602,8 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 		return nil, nil, &interfaces.ErrorMessage{StatusCode: status, Error: err, Addon: addon}
 	}
 	responsePayload := resp.Payload
-	if hasPresetPrompt {
-		responsePayload = redactPresetPromptFromPayload(responsePayload, presetPrompt)
+	if len(promptRedactions) > 0 {
+		responsePayload = redactPresetPromptsFromPayload(responsePayload, promptRedactions)
 	}
 	rec.finishNonStream(responsePayload, resp.Headers, http.StatusOK, nil, reqMeta)
 	if !PassthroughHeadersEnabled(h.Cfg) {
@@ -684,8 +683,7 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 	reasoningEffort := setReasoningEffortMetadata(reqMeta, handlerType, normalizedModel, rawJSON)
 	ctx = coreusage.WithReasoningEffort(ctx, reasoningEffort)
 	apiKey := apiKeyFromRequestContext(ctx)
-	presetPrompt, hasPresetPrompt := h.activePresetPromptForAPIKey(apiKey)
-	payload := h.applyPresetPromptToPayloadForAPIKey(handlerType, rawJSON, apiKey)
+	payload, promptRedactions := h.applyRequestPromptInjectionsToPayloadForAPIKey(handlerType, rawJSON, apiKey)
 	if len(payload) == 0 {
 		payload = nil
 	}
@@ -748,10 +746,7 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 		sentPayload := false
 		bootstrapRetries := 0
 		maxBootstrapRetries := StreamingBootstrapRetries(h.Cfg)
-		var redactor *presetPromptStreamRedactor
-		if hasPresetPrompt {
-			redactor = newPresetPromptStreamRedactor(presetPrompt)
-		}
+		redactor := newPresetPromptStreamRedactorForPrompts(promptRedactions)
 
 		sendErr := func(msg *interfaces.ErrorMessage) bool {
 			if ctx == nil {
