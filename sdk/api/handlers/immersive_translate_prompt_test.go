@@ -51,6 +51,9 @@ func TestImmersiveTranslateSubtitlePromptInjectsOpenAIChat(t *testing.T) {
 	if !strings.Contains(prompt, "分隔符行数量是 1") || !strings.Contains(prompt, "译文片段数量 = 2") {
 		t.Fatalf("subtitle prompt is missing exact shape counts: %q", prompt)
 	}
+	if !strings.Contains(prompt, "空白行数量 = 0") || !strings.Contains(prompt, "输出骨架必须是") {
+		t.Fatalf("subtitle prompt is missing no-blank-line skeleton constraints: %q", prompt)
+	}
 	if !strings.Contains(prompt, "ASCII 百分号：%%") || !strings.Contains(prompt, "精确等于 %%") {
 		t.Fatalf("subtitle prompt lost literal %% delimiter text: %q", prompt)
 	}
@@ -59,6 +62,15 @@ func TestImmersiveTranslateSubtitlePromptInjectsOpenAIChat(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "不要用空行") || !strings.Contains(prompt, "歌词") {
 		t.Fatalf("subtitle prompt is missing blank-line replacement constraints: %q", prompt)
+	}
+	if !strings.Contains(prompt, "把输入片段编号为 1 到 2") || !strings.Contains(prompt, "如果一句话跨多个字幕片段，只翻译当前片段可见的文字") {
+		t.Fatalf("subtitle prompt is missing one-to-one subtitle alignment constraints: %q", prompt)
+	}
+	if !strings.Contains(prompt, "分隔符行不能带句号") || !strings.Contains(prompt, "第 N 段译文只对应第 N 段原文") {
+		t.Fatalf("subtitle prompt is missing delimiter punctuation or final alignment checks: %q", prompt)
+	}
+	if !strings.Contains(prompt, "译文片段和 %% 之间不能插入空白行") || !strings.Contains(prompt, "整段输出不得包含空白行") {
+		t.Fatalf("subtitle prompt is missing separator adjacency checks: %q", prompt)
 	}
 
 	originals := executor.ExecuteOriginalRequests()
