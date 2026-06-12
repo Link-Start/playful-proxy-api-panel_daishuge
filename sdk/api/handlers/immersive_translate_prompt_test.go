@@ -57,6 +57,9 @@ func TestImmersiveTranslateSubtitlePromptInjectsOpenAIChat(t *testing.T) {
 	if !strings.Contains(prompt, "不要输出 CRLF") || !strings.Contains(prompt, "U+000D") {
 		t.Fatalf("subtitle prompt is missing line ending constraints: %q", prompt)
 	}
+	if !strings.Contains(prompt, "不要用空行") || !strings.Contains(prompt, "歌词") {
+		t.Fatalf("subtitle prompt is missing blank-line replacement constraints: %q", prompt)
+	}
 
 	originals := executor.ExecuteOriginalRequests()
 	if len(originals) != 1 || !bytes.Equal(originals[0], body) {
@@ -264,6 +267,46 @@ func TestImmersiveTranslateResponseNormalizerUnwrapsWholeResponseCodeFence(t *te
 	content := gjson.GetBytes(payload, "choices.0.message.content").String()
 	if content != "第一段\n%%\n第二段" {
 		t.Fatalf("content = %q, want unwrapped exact LF response", content)
+	}
+}
+
+func TestImmersiveTranslateResponseNormalizerRebuildsMissingDelimitersFromBlankGroups(t *testing.T) {
+	response := "我数着海湾上方的灯光\n\n却忘掉了我想说的话\n\n副歌又回来了又一次\n\n但却没有答案。"
+	executor := &presetPromptCaptureExecutor{
+		provider:        "immersive-translate-normalize-missing-delimiters",
+		responsePayload: []byte(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, response)),
+	}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{})
+	body := immersiveTranslateTestBody(model, immersiveTranslateTestSystem, "翻译为简体中文：\n\nI count the lights above the bay\n\n%%\n\nThen forget what I meant to say\n\n%%\n\nThe chorus comes back once again\n\n%%\n\nBut still no answer at the end")
+
+	payload, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+
+	content := gjson.GetBytes(payload, "choices.0.message.content").String()
+	if content != "我数着海湾上方的灯光\n%%\n却忘掉了我想说的话\n%%\n副歌又回来了又一次\n%%\n但却没有答案。" {
+		t.Fatalf("content = %q, want rebuilt delimiter lines between blank-line groups", content)
+	}
+}
+
+func TestImmersiveTranslateResponseNormalizerDoesNotRebuildAmbiguousBlankGroups(t *testing.T) {
+	response := "第一段\n\n第二段\n\n第三段"
+	executor := &presetPromptCaptureExecutor{
+		provider:        "immersive-translate-normalize-ambiguous-blank-groups",
+		responsePayload: []byte(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, response)),
+	}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{})
+	body := immersiveTranslateTestBody(model, immersiveTranslateTestSystem, "翻译为简体中文：\n\none\n\n%%\n\ntwo")
+
+	payload, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+
+	content := gjson.GetBytes(payload, "choices.0.message.content").String()
+	if content != response {
+		t.Fatalf("content = %q, want ambiguous blank groups left untouched", content)
 	}
 }
 
