@@ -16,8 +16,10 @@ func TestNormalizeFastModelAlias(t *testing.T) {
 		{name: "plain", model: "gpt-5.5", wantModel: "gpt-5.5", wantFast: false},
 		{name: "fast", model: "gpt-5.5-fast", wantModel: "gpt-5.5", wantFast: true},
 		{name: "thinking fast", model: "gpt-5.5-high-fast", wantModel: "gpt-5.5-high", wantFast: true},
+		{name: "spark fast", model: "gpt-5.3-codex-spark-fast", wantModel: "gpt-5.3-codex-spark", wantFast: true},
+		{name: "spark thinking fast", model: "gpt-5.3-codex-spark-high-fast", wantModel: "gpt-5.3-codex-spark-high", wantFast: true},
 		{name: "case insensitive suffix", model: "gpt-5.5-FAST", wantModel: "gpt-5.5", wantFast: true},
-		{name: "other provider fast suffix unchanged", model: "imagen-4.0-fast", wantModel: "imagen-4.0-fast", wantFast: false},
+		{name: "generic suffix is stripped before provider routing", model: "imagen-4.0-fast", wantModel: "imagen-4.0", wantFast: true},
 	}
 
 	for _, tt := range tests {

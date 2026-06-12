@@ -33,8 +33,9 @@ func NormalizeServiceTierValue(value string) (string, bool) {
 	}
 }
 
-// NormalizeFastModelAlias strips the client-facing Codex fast suffix from a
-// model alias while preserving any thinking-strength suffix before it.
+// NormalizeFastModelAlias strips the client-facing fast suffix from a model
+// alias while preserving any thinking-strength suffix before it. Provider
+// routing decides whether the stripped model is a Codex model.
 func NormalizeFastModelAlias(model string) (string, bool) {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -47,19 +48,7 @@ func NormalizeFastModelAlias(model string) (string, bool) {
 	if base == "" {
 		return model, false
 	}
-	if !isSupportedFastModelBase(base) {
-		return model, false
-	}
 	return base, true
-}
-
-func isSupportedFastModelBase(model string) bool {
-	switch strings.ToLower(strings.TrimSpace(model)) {
-	case "gpt-5.5", "gpt-5.5-low", "gpt-5.5-medium", "gpt-5.5-high", "gpt-5.5-xhigh":
-		return true
-	default:
-		return false
-	}
 }
 
 // RequestWantsPriorityServiceTier reports whether the client requested Codex

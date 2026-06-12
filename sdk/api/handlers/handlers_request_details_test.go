@@ -19,12 +19,14 @@ func TestGetRequestDetails_PreservesSuffix(t *testing.T) {
 	modelRegistry.RegisterClient("test-request-details-gemini", "gemini", []*registry.ModelInfo{
 		{ID: "gemini-2.5-pro", Created: now + 30},
 		{ID: "gemini-2.5-flash", Created: now + 25},
+		{ID: "gemini-custom-fast", Created: now + 24},
 	})
 	modelRegistry.RegisterClient("test-request-details-openai", "openai", []*registry.ModelInfo{
 		{ID: "gpt-5.2", Created: now + 20, Thinking: &registry.ThinkingSupport{Levels: []string{"low", "medium", "high", "xhigh"}}},
 	})
 	modelRegistry.RegisterClient("test-request-details-codex", "codex", []*registry.ModelInfo{
 		{ID: "gpt-5.5", Created: now + 15, Thinking: &registry.ThinkingSupport{Levels: []string{"low", "medium", "high", "xhigh"}}},
+		{ID: "gpt-5.3-codex-spark", Created: now + 14, Thinking: &registry.ThinkingSupport{Levels: []string{"low", "medium", "high", "xhigh"}}},
 	})
 	modelRegistry.RegisterClient("test-request-details-claude", "claude", []*registry.ModelInfo{
 		{ID: "claude-sonnet-4-5", Created: now + 5},
@@ -86,6 +88,27 @@ func TestGetRequestDetails_PreservesSuffix(t *testing.T) {
 			inputModel:    "gpt-5.5-high-fast",
 			wantProviders: []string{"codex"},
 			wantModel:     "gpt-5.5-high",
+			wantErr:       false,
+		},
+		{
+			name:          "codex spark fast alias resolves to base model",
+			inputModel:    "gpt-5.3-codex-spark-fast",
+			wantProviders: []string{"codex"},
+			wantModel:     "gpt-5.3-codex-spark",
+			wantErr:       false,
+		},
+		{
+			name:          "codex spark thinking fast alias resolves to thinking alias",
+			inputModel:    "gpt-5.3-codex-spark-high-fast",
+			wantProviders: []string{"codex"},
+			wantModel:     "gpt-5.3-codex-spark-high",
+			wantErr:       false,
+		},
+		{
+			name:          "non codex fast model remains unchanged",
+			inputModel:    "gemini-custom-fast",
+			wantProviders: []string{"gemini"},
+			wantModel:     "gemini-custom-fast",
 			wantErr:       false,
 		},
 		{

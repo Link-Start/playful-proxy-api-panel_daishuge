@@ -947,7 +947,7 @@ func (h *BaseAPIHandler) getRequestDetails(modelName string) (providers []string
 	} else {
 		resolvedModelName = util.ResolveAutoModel(modelName)
 	}
-	if fastModel, ok := codexcompat.NormalizeFastModelAlias(resolvedModelName); ok {
+	if fastModel, ok := codexcompat.NormalizeFastModelAlias(resolvedModelName); ok && canRouteModelToProvider(fastModel, "codex") {
 		resolvedModelName = fastModel
 	}
 
@@ -978,6 +978,24 @@ func (h *BaseAPIHandler) getRequestDetails(modelName string) (providers []string
 	// The thinking suffix is preserved in the model name itself, so no
 	// metadata-based configuration passing is needed.
 	return providers, resolvedModelName, nil
+}
+
+func canRouteModelToProvider(modelName, provider string) bool {
+	parsed := thinking.ParseSuffixForModel(modelName)
+	baseModel := strings.TrimSpace(parsed.ModelName)
+	for _, candidate := range util.GetProviderName(baseModel) {
+		if candidate == provider {
+			return true
+		}
+	}
+	if baseModel != modelName {
+		for _, candidate := range util.GetProviderName(modelName) {
+			if candidate == provider {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func cloneBytes(src []byte) []byte {

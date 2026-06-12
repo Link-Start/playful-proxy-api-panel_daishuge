@@ -29,6 +29,20 @@ func TestCodexExecutorAppliesFastAliasServiceTierAndThinking(t *testing.T) {
 	}
 }
 
+func TestCodexExecutorAppliesSparkFastAliasServiceTierAndThinking(t *testing.T) {
+	gotBody := executeCodexFastTestRequest(t, "gpt-5.3-codex-spark-high", []byte(`{"model":"gpt-5.3-codex-spark-high-fast","messages":[{"role":"user","content":"hello"}]}`))
+
+	if got := gjson.GetBytes(gotBody, "model").String(); got != "gpt-5.3-codex-spark" {
+		t.Fatalf("model = %q, want gpt-5.3-codex-spark. Body: %s", got, string(gotBody))
+	}
+	if got := gjson.GetBytes(gotBody, "reasoning.effort").String(); got != "high" {
+		t.Fatalf("reasoning.effort = %q, want high. Body: %s", got, string(gotBody))
+	}
+	if got := gjson.GetBytes(gotBody, "service_tier").String(); got != "priority" {
+		t.Fatalf("service_tier = %q, want priority. Body: %s", got, string(gotBody))
+	}
+}
+
 func TestCodexExecutorAppliesExplicitFastServiceTier(t *testing.T) {
 	gotBody := executeCodexFastTestRequest(t, "gpt-5.5-high", []byte(`{"model":"gpt-5.5-high","service_tier":"fast","messages":[{"role":"user","content":"hello"}]}`))
 
