@@ -126,16 +126,21 @@ func normalizeImmersiveTranslateContent(content string, delimiterCount int) (str
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
 	lines := strings.Split(normalized, "\n")
+	if unwrapped, ok := unwrapWholeResponseMarkdownFence(lines); ok {
+		lines = unwrapped
+		normalized = strings.Join(lines, "\n")
+	}
 
 	count := 0
 	changed := normalized != content
 	for i, line := range lines {
-		if strings.TrimSpace(line) != "%%" {
+		canonical, ok := canonicalImmersiveDelimiterLine(line)
+		if !ok {
 			continue
 		}
 		count++
-		if line != "%%" {
-			lines[i] = "%%"
+		if line != canonical {
+			lines[i] = canonical
 			changed = true
 		}
 	}
@@ -143,6 +148,56 @@ func normalizeImmersiveTranslateContent(content string, delimiterCount int) (str
 		return content, false
 	}
 	return strings.Join(lines, "\n"), true
+}
+
+func canonicalImmersiveDelimiterLine(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return line, false
+	}
+	var percentCount int
+	for _, r := range trimmed {
+		switch r {
+		case '%', '％':
+			percentCount++
+		case ' ', '\t', '\u3000':
+			continue
+		default:
+			return line, false
+		}
+	}
+	if percentCount < 2 {
+		return line, false
+	}
+	return "%%", true
+}
+
+func unwrapWholeResponseMarkdownFence(lines []string) ([]string, bool) {
+	start := -1
+	end := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			start = i
+			break
+		}
+	}
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			end = i
+			break
+		}
+	}
+	if start < 0 || end <= start {
+		return lines, false
+	}
+	if !strings.HasPrefix(strings.TrimSpace(lines[start]), "```") || strings.TrimSpace(lines[end]) != "```" {
+		return lines, false
+	}
+	out := make([]string, 0, len(lines)-2)
+	out = append(out, lines[:start]...)
+	out = append(out, lines[start+1:end]...)
+	out = append(out, lines[end+1:]...)
+	return out, true
 }
 
 func looksLikeImmersiveTranslateSegmentSystem(text string) bool {

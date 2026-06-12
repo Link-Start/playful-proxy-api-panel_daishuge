@@ -227,6 +227,46 @@ func TestImmersiveTranslateResponseNormalizerTrimsDelimiterLineWhitespace(t *tes
 	}
 }
 
+func TestImmersiveTranslateResponseNormalizerCanonicalizesPercentDelimiterVariants(t *testing.T) {
+	response := "第一段\n％ ％\n第二段\n%%%%\n第三段"
+	executor := &presetPromptCaptureExecutor{
+		provider:        "immersive-translate-normalize-percent-variants",
+		responsePayload: []byte(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, response)),
+	}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{})
+	body := immersiveTranslateTestBody(model, immersiveTranslateTestSystem, "翻译为简体中文：\n\none\n\n%%\n\ntwo\n\n%%\n\nthree")
+
+	payload, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+
+	content := gjson.GetBytes(payload, "choices.0.message.content").String()
+	if content != "第一段\n%%\n第二段\n%%\n第三段" {
+		t.Fatalf("content = %q, want canonical percent delimiter lines", content)
+	}
+}
+
+func TestImmersiveTranslateResponseNormalizerUnwrapsWholeResponseCodeFence(t *testing.T) {
+	response := "```text\n第一段\n%%\n第二段\n```"
+	executor := &presetPromptCaptureExecutor{
+		provider:        "immersive-translate-normalize-code-fence",
+		responsePayload: []byte(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, response)),
+	}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{})
+	body := immersiveTranslateTestBody(model, immersiveTranslateTestSystem, "翻译为简体中文：\n\none\n\n%%\n\ntwo")
+
+	payload, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+
+	content := gjson.GetBytes(payload, "choices.0.message.content").String()
+	if content != "第一段\n%%\n第二段" {
+		t.Fatalf("content = %q, want unwrapped exact LF response", content)
+	}
+}
+
 func TestImmersiveTranslateResponseNormalizerLeavesGenericChatUntouched(t *testing.T) {
 	response := "第一段\r\n%%\r\n第二段"
 	executor := &presetPromptCaptureExecutor{
