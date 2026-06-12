@@ -566,6 +566,7 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 	reasoningEffort := setReasoningEffortMetadata(reqMeta, handlerType, normalizedModel, rawJSON)
 	ctx = coreusage.WithReasoningEffort(ctx, reasoningEffort)
 	apiKey := apiKeyFromRequestContext(ctx)
+	immersiveDelimiterCount, immersiveSegment := immersiveTranslateSegmentDelimiterCountForPayload(handlerType, rawJSON)
 	payload, promptRedactions := h.applyRequestPromptInjectionsToPayloadForAPIKey(handlerType, rawJSON, apiKey)
 	if len(payload) == 0 {
 		payload = nil
@@ -604,6 +605,9 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 	responsePayload := resp.Payload
 	if len(promptRedactions) > 0 {
 		responsePayload = redactPresetPromptsFromPayload(responsePayload, promptRedactions)
+	}
+	if immersiveSegment {
+		responsePayload = normalizeImmersiveTranslateResponsePayload(handlerType, responsePayload, immersiveDelimiterCount)
 	}
 	rec.finishNonStream(responsePayload, resp.Headers, http.StatusOK, nil, reqMeta)
 	if !PassthroughHeadersEnabled(h.Cfg) {

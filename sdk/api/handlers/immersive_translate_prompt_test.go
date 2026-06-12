@@ -181,6 +181,72 @@ func TestImmersiveTranslateSubtitlePromptStacksWithPresetPromptAndRedactsLeaks(t
 	}
 }
 
+func TestImmersiveTranslateResponseNormalizerConvertsCRLFDelimiters(t *testing.T) {
+	response := "第一段\r\n%%\r\n第二段\r\n%%\r\n第三段"
+	executor := &presetPromptCaptureExecutor{
+		provider:        "immersive-translate-normalize-crlf",
+		responsePayload: []byte(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, response)),
+	}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{})
+	body := immersiveTranslateTestBody(model, immersiveTranslateTestSystem, "翻译为简体中文：\n\none\n\n%%\n\ntwo\n\n%%\n\nthree")
+
+	payload, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+
+	content := gjson.GetBytes(payload, "choices.0.message.content").String()
+	if strings.Contains(content, "\r") {
+		t.Fatalf("normalized response still contains carriage return: %q", content)
+	}
+	if got := cleanPercentDelimiterLineCount(content); got != 2 {
+		t.Fatalf("delimiter count = %d, want 2; content=%q", got, content)
+	}
+	if content != "第一段\n%%\n第二段\n%%\n第三段" {
+		t.Fatalf("content = %q, want exact LF-delimited response", content)
+	}
+}
+
+func TestImmersiveTranslateResponseNormalizerTrimsDelimiterLineWhitespace(t *testing.T) {
+	response := "第一段\n  %%  \n第二段"
+	executor := &presetPromptCaptureExecutor{
+		provider:        "immersive-translate-normalize-delimiter-spaces",
+		responsePayload: []byte(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, response)),
+	}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{})
+	body := immersiveTranslateTestBody(model, immersiveTranslateTestSystem, "翻译为简体中文：\n\none\n\n%%\n\ntwo")
+
+	payload, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+
+	content := gjson.GetBytes(payload, "choices.0.message.content").String()
+	if content != "第一段\n%%\n第二段" {
+		t.Fatalf("content = %q, want whitespace-free delimiter line", content)
+	}
+}
+
+func TestImmersiveTranslateResponseNormalizerLeavesGenericChatUntouched(t *testing.T) {
+	response := "第一段\r\n%%\r\n第二段"
+	executor := &presetPromptCaptureExecutor{
+		provider:        "immersive-translate-normalize-generic-chat",
+		responsePayload: []byte(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, response)),
+	}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{})
+	body := []byte(fmt.Sprintf(`{"model":%q,"messages":[{"role":"system","content":"You are a translator."},{"role":"user","content":"翻译为简体中文：\n\none\n\n%%\n\ntwo"}]}`, model))
+
+	payload, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+
+	content := gjson.GetBytes(payload, "choices.0.message.content").String()
+	if content != response {
+		t.Fatalf("generic response changed: got %q want %q", content, response)
+	}
+}
+
 func TestImmersiveTranslateSubtitlePromptStreamingRedactsLeakAcrossChunks(t *testing.T) {
 	immersivePrompt := buildImmersiveTranslateSegmentPrompt(1)
 	leaked := "prefix " + immersivePrompt + " suffix"
