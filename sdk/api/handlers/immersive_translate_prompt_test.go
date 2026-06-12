@@ -75,10 +75,11 @@ func TestImmersiveTranslateSubtitlePromptDoesNotTriggerForInlinePercentOnly(t *t
 	}
 }
 
-func TestImmersiveTranslateSubtitlePromptDoesNotTriggerForNonYouTubeTranslation(t *testing.T) {
+func TestImmersiveTranslateSegmentPromptTriggersForNonYouTubeBatches(t *testing.T) {
 	executor := &presetPromptCaptureExecutor{provider: "immersive-translate-generic"}
 	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{})
-	system := strings.ReplaceAll(immersiveTranslateTestSystem, "Title: 《Example - YouTube》", "Title: 《Example Blog》")
+	system := strings.ReplaceAll(immersiveTranslateTestSystem, "Title: 《Example - YouTube》", "Title: 《Reddit - The heart of the internet》")
+	system = strings.ReplaceAll(system, "Type: Subtitle\n", "")
 	body := immersiveTranslateTestBody(model, system, "翻译为简体中文：\n\nfirst line\n\n%%\n\nsecond line")
 
 	_, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, body, "")
@@ -89,8 +90,26 @@ func TestImmersiveTranslateSubtitlePromptDoesNotTriggerForNonYouTubeTranslation(
 	if len(payloads) != 1 {
 		t.Fatalf("captured upstream payloads = %d, want 1", len(payloads))
 	}
-	if got := gjson.GetBytes(payloads[0], "messages.0.content").String(); got == immersiveTranslateSubtitlePrompt {
-		t.Fatalf("non-YouTube translation triggered subtitle prompt unexpectedly; payload=%s", payloads[0])
+	if got := gjson.GetBytes(payloads[0], "messages.0.content").String(); got != immersiveTranslateSubtitlePrompt {
+		t.Fatalf("non-YouTube segmented batch did not trigger segment prompt; got %q", got)
+	}
+}
+
+func TestImmersiveTranslateSegmentPromptDoesNotTriggerForGenericChat(t *testing.T) {
+	executor := &presetPromptCaptureExecutor{provider: "immersive-translate-generic-chat"}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{})
+	body := []byte(fmt.Sprintf(`{"model":%q,"messages":[{"role":"system","content":"You are a translator."},{"role":"user","content":"翻译为简体中文：\n\nfirst line\n\n%%\n\nsecond line"}]}`, model))
+
+	_, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+	payloads := executor.ExecutePayloads()
+	if len(payloads) != 1 {
+		t.Fatalf("captured upstream payloads = %d, want 1", len(payloads))
+	}
+	if !bytes.Equal(payloads[0], body) {
+		t.Fatalf("generic chat payload changed unexpectedly: got %s want %s", payloads[0], body)
 	}
 }
 
