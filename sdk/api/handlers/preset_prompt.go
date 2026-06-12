@@ -107,7 +107,7 @@ func (h *BaseAPIHandler) applyRequestPromptInjectionsToPayloadForAPIKey(handlerT
 	}
 
 	if prompt, ok := immersiveTranslateSubtitlePromptForPayload(handlerType, rawJSON); ok {
-		mutated := applyPromptToPayload(handlerType, payload, prompt)
+		mutated := applyImmersiveTranslatePromptToPayload(handlerType, payload, prompt)
 		if !bytes.Equal(mutated, payload) {
 			payload = mutated
 			redactions = append(redactions, prompt)
@@ -115,6 +115,13 @@ func (h *BaseAPIHandler) applyRequestPromptInjectionsToPayloadForAPIKey(handlerT
 	}
 
 	return payload, redactions
+}
+
+func applyImmersiveTranslatePromptToPayload(handlerType string, rawJSON []byte, prompt string) []byte {
+	if strings.EqualFold(strings.TrimSpace(handlerType), "openai") {
+		return injectPromptAfterLeadingSystemOpenAIChat(rawJSON, prompt)
+	}
+	return applyPromptToPayload(handlerType, rawJSON, prompt)
 }
 
 func applyPromptToPayload(handlerType string, rawJSON []byte, prompt string) []byte {
@@ -319,6 +326,47 @@ func injectPresetPromptIntoOpenAIChat(rawJSON []byte, prompt string) []byte {
 	}
 	mutatedMessages, ok := prependJSONRawArray(messages.Raw, item)
 	if !ok {
+		return rawJSON
+	}
+	out, err := sjson.SetRawBytes(rawJSON, "messages", mutatedMessages)
+	if err != nil {
+		return rawJSON
+	}
+	return out
+}
+
+func injectPromptAfterLeadingSystemOpenAIChat(rawJSON []byte, prompt string) []byte {
+	messages := gjson.GetBytes(rawJSON, "messages")
+	if !messages.Exists() || !messages.IsArray() {
+		return rawJSON
+	}
+	item, err := json.Marshal(map[string]any{
+		"role":    "system",
+		"content": prompt,
+	})
+	if err != nil {
+		return rawJSON
+	}
+
+	var rawMessages []json.RawMessage
+	if err := json.Unmarshal([]byte(messages.Raw), &rawMessages); err != nil {
+		return rawJSON
+	}
+	insertAt := 0
+	for insertAt < len(rawMessages) {
+		role := strings.ToLower(strings.TrimSpace(gjson.GetBytes(rawMessages[insertAt], "role").String()))
+		if role != "system" && role != "developer" {
+			break
+		}
+		insertAt++
+	}
+
+	mutated := make([]json.RawMessage, 0, len(rawMessages)+1)
+	mutated = append(mutated, rawMessages[:insertAt]...)
+	mutated = append(mutated, json.RawMessage(item))
+	mutated = append(mutated, rawMessages[insertAt:]...)
+	mutatedMessages, err := json.Marshal(mutated)
+	if err != nil {
 		return rawJSON
 	}
 	out, err := sjson.SetRawBytes(rawJSON, "messages", mutatedMessages)

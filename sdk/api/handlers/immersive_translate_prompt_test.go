@@ -41,11 +41,21 @@ func TestImmersiveTranslateSubtitlePromptInjectsOpenAIChat(t *testing.T) {
 	if got := gjson.GetBytes(forwarded, "messages.0.role").String(); got != "system" {
 		t.Fatalf("messages.0.role = %q, want system; payload=%s", got, forwarded)
 	}
-	if got := gjson.GetBytes(forwarded, "messages.0.content").String(); got != immersiveTranslateSubtitlePrompt {
-		t.Fatalf("subtitle prompt was not prepended; got %q", got)
-	}
-	if got := gjson.GetBytes(forwarded, "messages.1.content").String(); got != immersiveTranslateTestSystem {
+	if got := gjson.GetBytes(forwarded, "messages.0.content").String(); got != immersiveTranslateTestSystem {
 		t.Fatalf("original system prompt moved incorrectly; got %q", got)
+	}
+	prompt := gjson.GetBytes(forwarded, "messages.1.content").String()
+	if prompt != buildImmersiveTranslateSegmentPrompt(1) {
+		t.Fatalf("subtitle prompt was not inserted after plugin system; got %q", prompt)
+	}
+	if !strings.Contains(prompt, "分隔符行数量是 1") || !strings.Contains(prompt, "译文片段数量 = 2") {
+		t.Fatalf("subtitle prompt is missing exact shape counts: %q", prompt)
+	}
+	if !strings.Contains(prompt, "ASCII 百分号：%%") || !strings.Contains(prompt, "精确等于 %%") {
+		t.Fatalf("subtitle prompt lost literal %% delimiter text: %q", prompt)
+	}
+	if !strings.Contains(prompt, "不要输出 CRLF") || !strings.Contains(prompt, "U+000D") {
+		t.Fatalf("subtitle prompt is missing line ending constraints: %q", prompt)
 	}
 
 	originals := executor.ExecuteOriginalRequests()
@@ -67,7 +77,7 @@ func TestImmersiveTranslateSubtitlePromptDoesNotTriggerForInlinePercentOnly(t *t
 	if len(payloads) != 1 {
 		t.Fatalf("captured upstream payloads = %d, want 1", len(payloads))
 	}
-	if got := gjson.GetBytes(payloads[0], "messages.0.content").String(); got == immersiveTranslateSubtitlePrompt {
+	if got := gjson.GetBytes(payloads[0], "messages.1.content").String(); strings.Contains(got, "当前请求来自沉浸式翻译插件") {
 		t.Fatalf("inline %% in URL triggered subtitle prompt unexpectedly; payload=%s", payloads[0])
 	}
 	if !bytes.Equal(payloads[0], body) {
@@ -90,8 +100,30 @@ func TestImmersiveTranslateSegmentPromptTriggersForNonYouTubeBatches(t *testing.
 	if len(payloads) != 1 {
 		t.Fatalf("captured upstream payloads = %d, want 1", len(payloads))
 	}
-	if got := gjson.GetBytes(payloads[0], "messages.0.content").String(); got != immersiveTranslateSubtitlePrompt {
+	if got := gjson.GetBytes(payloads[0], "messages.1.content").String(); got != buildImmersiveTranslateSegmentPrompt(1) {
 		t.Fatalf("non-YouTube segmented batch did not trigger segment prompt; got %q", got)
+	}
+}
+
+func TestImmersiveTranslateSegmentPromptUsesExactDelimiterCounts(t *testing.T) {
+	executor := &presetPromptCaptureExecutor{provider: "immersive-translate-counts"}
+	handler, model := newPresetPromptTestHandler(t, executor, sdkconfig.PresetPromptConfig{})
+	body := immersiveTranslateTestBody(model, immersiveTranslateTestSystem, "翻译为简体中文：\n\n1\n\n%%\n\n2\n\n%%\n\n3\n\n%%\n\n4\n\n%%\n\n5\n\n%%\n\n6\n\n%%\n\n7\n\n%%\n\n8\n\n%%\n\n9\n\n%%\n\n10")
+
+	_, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, body, "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager returned error: %+v", errMsg)
+	}
+	payloads := executor.ExecutePayloads()
+	if len(payloads) != 1 {
+		t.Fatalf("captured upstream payloads = %d, want 1", len(payloads))
+	}
+	prompt := gjson.GetBytes(payloads[0], "messages.1.content").String()
+	if !strings.Contains(prompt, "分隔符行数量是 9") || !strings.Contains(prompt, "译文片段数量 = 10") {
+		t.Fatalf("prompt did not include exact 9/10 shape counts: %q", prompt)
+	}
+	if !strings.Contains(prompt, "ASCII 百分号：%%") || strings.Contains(prompt, "ASCII 百分号：%。") {
+		t.Fatalf("prompt does not preserve literal %% delimiter text: %q", prompt)
 	}
 }
 
@@ -114,7 +146,8 @@ func TestImmersiveTranslateSegmentPromptDoesNotTriggerForGenericChat(t *testing.
 }
 
 func TestImmersiveTranslateSubtitlePromptStacksWithPresetPromptAndRedactsLeaks(t *testing.T) {
-	leaked := "prefix " + presetPromptTestMarker + " middle " + immersiveTranslateSubtitlePrompt + " suffix"
+	immersivePrompt := buildImmersiveTranslateSegmentPrompt(1)
+	leaked := "prefix " + presetPromptTestMarker + " middle " + immersivePrompt + " suffix"
 	executor := &presetPromptCaptureExecutor{
 		provider:        "immersive-translate-redact",
 		responsePayload: []byte(fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, leaked)),
@@ -137,16 +170,20 @@ func TestImmersiveTranslateSubtitlePromptStacksWithPresetPromptAndRedactsLeaks(t
 	}
 
 	payloads := executor.ExecutePayloads()
-	if got := gjson.GetBytes(payloads[0], "messages.0.content").String(); got != immersiveTranslateSubtitlePrompt {
-		t.Fatalf("messages.0.content = %q, want subtitle prompt", got)
+	if got := gjson.GetBytes(payloads[0], "messages.0.content").String(); got != presetPromptTestMarker {
+		t.Fatalf("messages.0.content = %q, want preset prompt", got)
 	}
-	if got := gjson.GetBytes(payloads[0], "messages.1.content").String(); got != presetPromptTestMarker {
-		t.Fatalf("messages.1.content = %q, want preset prompt", got)
+	if got := gjson.GetBytes(payloads[0], "messages.1.content").String(); got != immersiveTranslateTestSystem {
+		t.Fatalf("messages.1.content = %q, want original plugin prompt", got)
+	}
+	if got := gjson.GetBytes(payloads[0], "messages.2.content").String(); got != immersivePrompt {
+		t.Fatalf("messages.2.content = %q, want subtitle prompt", got)
 	}
 }
 
 func TestImmersiveTranslateSubtitlePromptStreamingRedactsLeakAcrossChunks(t *testing.T) {
-	leaked := "prefix " + immersiveTranslateSubtitlePrompt + " suffix"
+	immersivePrompt := buildImmersiveTranslateSegmentPrompt(1)
+	leaked := "prefix " + immersivePrompt + " suffix"
 	encodedLeak, err := json.Marshal(leaked)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)

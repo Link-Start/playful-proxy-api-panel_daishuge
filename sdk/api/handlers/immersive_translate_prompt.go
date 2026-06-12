@@ -1,25 +1,40 @@
 package handlers
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/tidwall/gjson"
 )
 
-const immersiveTranslateSegmentPrompt = `当前请求来自沉浸式翻译的分段批量翻译。请把分段对齐视为最高优先级，优先保证用户看到的每一段原文一一对应到同位置译文，中文语法和上下文连贯性只能在单个片段内部优化。
+const immersiveTranslateSegmentPromptTemplate = `当前请求来自沉浸式翻译插件。你正在返回机器会继续拆分的批量译文，不是普通整段翻译。用户体验优先级高于中文自然连贯性：必须先保证第 1 段原文对应第 1 段译文，第 2 段原文对应第 2 段译文，依次类推。
 
-硬性输出协议：
-1. 用户正文中只有“单独一行且去掉空白后等于 %%”的内容是分隔符；URL 或普通文本里的内联 %% 不是分隔符，必须留在原片段内。
-2. 按这些分隔符切分后，输入有 N 个片段，输出必须也有 N 个译文片段，顺序完全一致。
-3. 输出的分隔符行数量必须和用户正文完全相同；每个分隔符行只能是两个百分号：%%。
-4. 每个输入片段只能对应一个输出片段。禁止合并相邻片段，禁止把一个片段拆成多个片段，禁止把前后片段的含义搬进当前片段。
-5. 如果一个片段只是半句话、短语、标题、帖子碎片、歌词碎片或语法不完整，也只翻译这个片段本身，不为了中文通顺补上相邻片段内容。
-6. 翻译时可参考上下文理解含义，但不得改变片段边界、数量、顺序或分隔符。
-7. 不输出解释、标签、编号、Markdown、引号或额外空段。
+本次输入已经被独立分隔符行切成 %[2]d 个片段，分隔符行数量是 %[1]d。你的输出必须满足这个精确形状：
+译文片段数量 = %[2]d
+分隔符行数量 = %[1]d
 
-自检后再输出：分隔符数量必须一致，片段数量必须一致，每个位置只放对应原片段的译文。`
+分隔符协议：
+1. 每个分隔符行必须只包含两个 ASCII 百分号：%%%%。
+2. 分隔符行前后只使用普通换行 U+000A。不要输出回车 U+000D，不要输出 CRLF，不要在 %%%% 前后加空格或 Tab。
+3. 不要使用全角百分号，不要把 %%%% 包进引号、代码块、Markdown、项目符号或编号。
 
-const immersiveTranslateSubtitlePrompt = immersiveTranslateSegmentPrompt
+分段协议：
+1. 一个输入片段只能产生一个译文片段。禁止合并相邻片段，禁止把一个片段拆成多个译文片段。
+2. 可以参考上下文理解含义，但不得把相邻片段的意思搬进当前片段，不得重排顺序。
+3. 片段即使是半句话、短语、标题、帖子碎片、歌词碎片、日文混合文本、已有中文或无需翻译内容，也必须保留它自己的输出位置。
+4. 如果片段无需翻译，保留原文或只做必要本地化，但仍按原位置输出。
+5. 不输出解释、标签、编号、项目符号、Markdown 加粗、额外标题或额外空段。
+
+输出前只检查三件事：分隔符行必须等于 %[1]d；译文片段必须等于 %[2]d；每个分隔符行必须精确等于 %%%%。`
+
+func buildImmersiveTranslateSegmentPrompt(delimiterCount int) string {
+	if delimiterCount < 1 {
+		delimiterCount = 1
+	}
+	return fmt.Sprintf(immersiveTranslateSegmentPromptTemplate, delimiterCount, delimiterCount+1)
+}
+
+var immersiveTranslateSubtitlePrompt = buildImmersiveTranslateSegmentPrompt(1)
 
 func immersiveTranslateSubtitlePromptForPayload(handlerType string, rawJSON []byte) (string, bool) {
 	if !strings.EqualFold(strings.TrimSpace(handlerType), "openai") || len(rawJSON) == 0 || !gjson.ValidBytes(rawJSON) {
@@ -50,13 +65,14 @@ func immersiveTranslateSubtitlePromptForPayload(handlerType string, rawJSON []by
 
 	system := systemText.String()
 	user := userText.String()
+	delimiterCount := cleanPercentDelimiterLineCount(user)
 	if !looksLikeImmersiveTranslateSegmentSystem(system) {
 		return "", false
 	}
-	if !looksLikeImmersiveTranslateSegmentUser(user) {
+	if !looksLikeImmersiveTranslateSegmentUser(user, delimiterCount) {
 		return "", false
 	}
-	return immersiveTranslateSegmentPrompt, true
+	return buildImmersiveTranslateSegmentPrompt(delimiterCount), true
 }
 
 func looksLikeImmersiveTranslateSegmentSystem(text string) bool {
@@ -72,8 +88,8 @@ func looksLikeImmersiveTranslateSegmentSystem(text string) bool {
 	return strings.Contains(text, "Document Metadata:") || strings.Contains(text, "输入输出格式示例")
 }
 
-func looksLikeImmersiveTranslateSegmentUser(text string) bool {
-	if strings.TrimSpace(text) == "" || cleanPercentDelimiterLineCount(text) == 0 {
+func looksLikeImmersiveTranslateSegmentUser(text string, delimiterCount int) bool {
+	if strings.TrimSpace(text) == "" || delimiterCount == 0 {
 		return false
 	}
 	return strings.Contains(text, "翻译为")
